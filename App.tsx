@@ -22,8 +22,11 @@ import {
   IBMPlexMono_400Regular,
   IBMPlexMono_500Medium,
 } from "@expo-google-fonts/ibm-plex-mono";
+import * as SplashScreen from "expo-splash-screen";
 import AuthScreen from "./src/auth/AuthScreen";
 import { getUser, guestDaysLeft, signOut, User } from "./src/auth/auth";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // --- MOCK STORE (offline-first, AsyncStorage-ready) ---
 type AppId = "instagram" | "youtube" | "reddit" | "twitter";
@@ -48,7 +51,7 @@ const ADS = {
 const { width } = Dimensions.get("window");
 
 export default function App() {
-  const [fontsLoaded] = useSpaceGrotesk({
+  const [fontsLoaded, fontError] = useSpaceGrotesk({
     SpaceGrotesk_600SemiBold,
     SpaceGrotesk_700Bold,
     IBMPlexMono_400Regular,
@@ -82,6 +85,17 @@ export default function App() {
         if (onboard) setOnboarded(true);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    if ((fontsLoaded || fontError) && !authLoading) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError, authLoading]);
+
+  useEffect(() => {
+    const t = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 2500);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
