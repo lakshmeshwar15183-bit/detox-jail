@@ -67,7 +67,9 @@
     "extra": {
       "eas": {
         "projectId": "detox-jail-0000-0000-000000000000"
-      }
+      },
+      "supabaseUrl": "https://toscljrivrawvlfebdzz.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvc2NsanJpdnJhd3ZsZmViZHp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2MDc1MzUsImV4cCI6MjA5ODE4MzUzNX0.XnQrgOSKbXaUag58E05tjXh8cS05eIv38RXaMrZG_LU"
     },
     "description": "Your apps go to jail so you can go free. Lock Instagram, YouTube, Reddit \u2014 unlock with a task or rewarded ad. Offline-first, premium dark UI."
   }

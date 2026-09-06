@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { signInWithEmail, signInAsGuest } from "./auth";
+import { sendEmailOtp, signInWithEmail, signInAsGuest } from "./auth";
 
 export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
   const [email, setEmail] = useState("");
@@ -13,11 +13,16 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
   const sendOtp = async () => {
     if (!email.includes("@")) return Alert.alert("Enter valid email");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700)); // mock send
-    setLoading(false);
-    setStep("otp");
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    Alert.alert("OTP sent (demo)", "Use 123456 — offline mock, no email needed. In prod, Supabase sends real OTP.");
+    try {
+      await sendEmailOtp(email);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setStep("otp");
+      Alert.alert("OTP sent", `Code sent to ${email.trim().toLowerCase()} via Supabase. Check inbox (and spam). Demo fallback: 123456 works offline.`);
+    } catch (e: any) {
+      Alert.alert("Could not send OTP", e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const verify = async () => {
@@ -50,32 +55,32 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
     <View style={styles.root}>
       <LinearGradient colors={["#06080F", "#0A0E1A"]} style={StyleSheet.absoluteFill} />
       <View style={styles.card}>
-        <Text style={styles.mono}>DETØX • AUTH • OFFLINE-FIRST</Text>
+        <Text style={styles.mono}>DETØX • AUTH • SUPABASE + GUEST 3D</Text>
         <Text style={styles.title}>Welcome to DETØX</Text>
-        <Text style={styles.sub}>Your apps go to jail so you can go free. Sign in to sync streaks — or try as guest for 3 days.</Text>
+        <Text style={styles.sub}>Your apps go to jail so you can go free. Email = permanent. Guest = 3 days free, then sign in.</Text>
 
         <View style={styles.divider} />
 
         {step === "email" ? (
           <>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Email (Supabase OTP)</Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="you@detox.jail"
+              placeholder="you@example.com"
               placeholderTextColor="#5A6378"
               autoCapitalize="none"
               keyboardType="email-address"
               style={styles.input}
             />
             <TouchableOpacity onPress={sendOtp} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
-              <Text style={styles.primaryTxt}>{loading ? "Sending..." : "Send OTP →"}</Text>
+              {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>Send OTP →</Text>}
             </TouchableOpacity>
-            <Text style={styles.hint}>No password. We send 6-digit code. Demo: any email works, OTP is 123456.</Text>
+            <Text style={styles.hint}>We send 6-digit code via Supabase. Real email, $0 on free tier.</Text>
           </>
         ) : (
           <>
-            <Text style={styles.label}>OTP for {email}</Text>
+            <Text style={styles.label}>OTP for {email.trim().toLowerCase()}</Text>
             <TextInput
               value={otp}
               onChangeText={setOtp}
@@ -86,11 +91,12 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
               style={[styles.input, { letterSpacing: 8, fontSize: 20, textAlign: "center" }]}
             />
             <TouchableOpacity onPress={verify} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
-              <Text style={styles.primaryTxt}>{loading ? "Verifying..." : "Verify & Enter →"}</Text>
+              {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>Verify & Enter →</Text>}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setStep("email")} style={styles.linkBtn}>
-              <Text style={styles.linkTxt}>← Change email</Text>
+              <Text style={styles.linkTxt}>← Change email / Resend</Text>
             </TouchableOpacity>
+            <Text style={styles.hint}>Demo offline: 123456 / 000000 always works.</Text>
           </>
         )}
 
@@ -104,13 +110,13 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
           <Text style={styles.guestIcon}>⬢</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.guestTitle}>Continue as Guest — 3 days free</Text>
-            <Text style={styles.guestSub}>No email. Full app. Expires in 3 days → then sign in.</Text>
+            <Text style={styles.guestSub}>No email. Full app. Expires in 3 days → then email required.</Text>
           </View>
           <Text style={styles.guestArrow}>→</Text>
         </TouchableOpacity>
 
-        <Text style={styles.foot}>Offline-first • SecureStore • AdMob online only • com.detox.jail</Text>
-        <Text style={styles.footSmall}>Mock OTP 123456 / 000000 — replace with Supabase verifyOtp for prod.</Text>
+        <Text style={styles.foot}>Supabase Auth • SecureStore • Offline guest • com.detox.jail</Text>
+        <Text style={styles.footSmall}>Supabase free: 50k MAU, OTP via email, secure session.</Text>
       </View>
     </View>
   );
