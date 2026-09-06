@@ -32,7 +32,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import AuthScreen from "./src/auth/AuthScreen";
 import { getUser, guestDaysLeft, signOut, User } from "./src/auth/auth";
 import { load as loadStore, save as saveStore, markToday } from "./src/store/useStore";
-import { isUsageAccessGranted, getForegroundApp, getAppUsage, showOverlay, hideOverlay, canDrawOverlays } from "./src/native/jail";
+import { isUsageAccessGranted, getForegroundApp, getAppUsage, showOverlay, hideOverlay, canDrawOverlays, startMonitoring, stopMonitoring } from "./src/native/jail";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -274,12 +274,12 @@ function AppInner() {
     ]);
   };
 
-  // REAL jail polling — replaces mock tick, uses UsageStats + overlay
+  // usage polling for UI (no mock)
   useEffect(() => {
     if (hasUsagePermission !== true) return;
     if (authLoading) return;
     let mounted = true;
-    const poll = async () => {
+    const pollUsage = async () => {
       try {
         const updates: Record<string, number> = {};
         for (const id of Object.keys(allApps)) {
@@ -300,35 +300,30 @@ function AppInner() {
           }
           return changed ? (next as any) : prev;
         });
-        const fg = await getForegroundApp();
-        if (!fg || !mounted) return;
-        for (const [id, cfg] of Object.entries(allApps as Record<string, AppConfig>)) {
-          if (fg === cfg.packageName) {
-            const used = updates[id] ?? 0;
-            if (used >= cfg.limit && jailed !== id) {
-              const canOverlay = hasOverlayPermission ?? (await canDrawOverlays());
-              if (!canOverlay) {
-                setJailed(id as any);
-              } else {
-                try {
-                  await showOverlay(cfg.name);
-                } catch {}
-                setJailed(id as any);
-              }
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              break;
-            }
-          }
-        }
       } catch {}
     };
-    poll();
-    const t = setInterval(poll, 2500);
+    pollUsage();
+    const t = setInterval(pollUsage, 4000);
     return () => {
       mounted = false;
       clearInterval(t);
     };
-  }, [hasUsagePermission, hasOverlayPermission, allApps, jailed, authLoading]);
+  }, [hasUsagePermission, allApps, authLoading]);
+
+  // native foreground service for real blocking — works even when DON'T is background/killed
+  useEffect(() => {
+    if (authLoading) return;
+    if (!jailed) {
+      stopMonitoring().catch(() => {});
+      hideOverlay().catch(() => {});
+      return;
+    }
+    if (hasUsagePermission !== true || hasOverlayPermission !== true) return;
+    const cfg = (allApps as any)[jailed] as AppConfig | undefined;
+    if (!cfg?.packageName) return;
+    const appsJson = JSON.stringify({ [jailed]: { name: cfg.name, packageName: cfg.packageName, limitMin: cfg.limit } });
+    startMonitoring(appsJson).catch(() => {});
+  }, [jailed, allApps, hasUsagePermission, hasOverlayPermission, authLoading]);
 
   // auto-ask permissions
   useEffect(() => {

@@ -75,3 +75,21 @@ export async function isOverlayShowing(): Promise<boolean> {
     return false;
   }
 }
+
+export async function startMonitoring(appsJson: string): Promise<boolean> {
+  if (Platform.OS !== "android" || !OverlayModule) return false;
+  try {
+    return await OverlayModule.startMonitoring(appsJson);
+  } catch {
+    return false;
+  }
+}
+
+export async function stopMonitoring(): Promise<boolean> {
+  if (Platform.OS !== "android" || !OverlayModule) return false;
+  try {
+    return await OverlayModule.stopMonitoring();
+  } catch {
+    return false;
+  }
+}
