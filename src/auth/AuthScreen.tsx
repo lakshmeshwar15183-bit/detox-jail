@@ -17,7 +17,20 @@ import { signUp, signIn, sendPasswordReset, signInAsGuest } from "./auth";
 
 type Mode = "login" | "signup";
 
-export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
+export default function AuthScreen({ onAuthed, theme, isDark }: { onAuthed: () => void; theme?: any; isDark?: boolean }) {
+  const t = theme || {
+    bg: "#06080F",
+    bgGrad: ["#06080F", "#0A0E1A"],
+    card: "#0F1320",
+    card2: "#0A0D18",
+    border: "#1A1F2E",
+    border2: "#2A3148",
+    text: "#fff",
+    muted: "#8B93B8",
+    subtle: "#5A6378",
+    accent: "#60A5FA",
+  };
+  const dark = isDark ?? true;
   const [mode, setMode] = useState<Mode>("login");
   const [forgot, setForgot] = useState(false);
   const [email, setEmail] = useState("");
@@ -122,36 +135,43 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
     }
   };
 
+  const bgGrad: any = dark ? ["#06080F", "#0A0E1A"] : ["#F8FAFC", "#FFFFFF"];
+  const cardBg = t.card;
+  const cardStyle: any = [styles.card, { backgroundColor: cardBg, borderColor: t.border }];
+  const inputStyle: any = [styles.input, { backgroundColor: t.card2, borderColor: t.border, color: t.text }];
+  const primaryStyle: any = [styles.primary, { backgroundColor: dark ? "#fff" : t.text }];
+  const primaryTxtStyle: any = [styles.primaryTxt, { color: dark ? "#06080F" : t.bg }];
+
   if (forgot) {
     return (
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
-        <LinearGradient colors={["#06080F", "#0A0E1A"]} style={StyleSheet.absoluteFill} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.root, { backgroundColor: t.bg }]}>
+        <LinearGradient colors={bgGrad} style={StyleSheet.absoluteFill} />
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.card}>
-            <Text style={styles.mono}>DON'T • RESET PASSWORD</Text>
-            <Text style={styles.title}>Forgot password?</Text>
-            <Text style={styles.sub}>Enter your real email — we'll send a secure reset link via Supabase.</Text>
-            <View style={styles.divider} />
-            <Text style={styles.label}>Email</Text>
+          <View style={cardStyle}>
+            <Text style={[styles.mono, { color: t.muted }]}>DON'T • RESET PASSWORD</Text>
+            <Text style={[styles.title, { color: t.text }]}>Forgot password?</Text>
+            <Text style={[styles.sub, { color: t.muted }]}>Enter your real email — we'll send a secure reset link via Supabase.</Text>
+            <View style={[styles.divider, { backgroundColor: t.border }]} />
+            <Text style={[styles.label, { color: t.text }]}>Email</Text>
             <TextInput
               value={email}
-              onChangeText={(t) => { setEmail(t); clearMsg(); }}
+              onChangeText={(t2) => { setEmail(t2); clearMsg(); }}
               placeholder="you@example.com"
-              placeholderTextColor="#5A6378"
+              placeholderTextColor={t.subtle}
               autoCapitalize="none"
               keyboardType="email-address"
               autoCorrect={false}
-              style={styles.input}
+              style={inputStyle}
             />
             {error && <Text style={styles.error}>{error}</Text>}
             {info && <Text style={styles.info}>{info}</Text>}
-            <TouchableOpacity onPress={handleForgotSend} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
-              {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>Send Reset Link →</Text>}
+            <TouchableOpacity onPress={handleForgotSend} disabled={loading} style={[primaryStyle, loading && { opacity: 0.6 }]}>
+              {loading ? <ActivityIndicator color={dark ? "#06080F" : "#fff"} /> : <Text style={primaryTxtStyle}>Send Reset Link →</Text>}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setForgot(false)} style={styles.linkBtn}>
-              <Text style={styles.linkTxt}>← Back to Log In</Text>
+              <Text style={[styles.linkTxt, { color: t.accent }]}>← Back to Log In</Text>
             </TouchableOpacity>
-            <Text style={styles.hint}>Disposable / temp-mail addresses are blocked.</Text>
+            <Text style={[styles.hint, { color: t.subtle }]}>Disposable / temp-mail addresses are blocked.</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -159,98 +179,98 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
-      <LinearGradient colors={["#06080F", "#0A0E1A"]} style={StyleSheet.absoluteFill} />
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.root, { backgroundColor: t.bg }]}>
+      <LinearGradient colors={bgGrad} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <Text style={styles.mono}>DON'T • AUTH • EMAIL + PASSWORD</Text>
-          <Text style={styles.title}>Welcome to DON'T</Text>
-          <Text style={styles.sub}>Create an account with your real email or log in. Guest = 3 days free, then email required.</Text>
-          <View style={styles.segment}>
-            <TouchableOpacity onPress={() => switchMode("login")} style={[styles.segBtn, mode === "login" && styles.segActive]}>
-              <Text style={[styles.segTxt, mode === "login" && styles.segTxtActive]}>Log In</Text>
+        <View style={cardStyle}>
+          <Text style={[styles.mono, { color: t.muted }]}>DON'T • AUTH • EMAIL + PASSWORD</Text>
+          <Text style={[styles.title, { color: t.text }]}>Welcome to DON'T</Text>
+          <Text style={[styles.sub, { color: t.muted }]}>Create an account with your real email or log in. Guest = 3 days free, then email required.</Text>
+          <View style={[styles.segment, { backgroundColor: t.card2, borderColor: t.border }]}>
+            <TouchableOpacity onPress={() => switchMode("login")} style={[styles.segBtn, mode === "login" && { backgroundColor: t.border, borderColor: t.border2, borderWidth: 1 }]}>
+              <Text style={[styles.segTxt, { color: t.muted }, mode === "login" && { color: t.text, fontWeight: "800" }]}>Log In</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => switchMode("signup")} style={[styles.segBtn, mode === "signup" && styles.segActive]}>
-              <Text style={[styles.segTxt, mode === "signup" && styles.segTxtActive]}>Create Account</Text>
+            <TouchableOpacity onPress={() => switchMode("signup")} style={[styles.segBtn, mode === "signup" && { backgroundColor: t.border, borderColor: t.border2, borderWidth: 1 }]}>
+              <Text style={[styles.segTxt, { color: t.muted }, mode === "signup" && { color: t.text, fontWeight: "800" }]}>Create Account</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.divider} />
-          <Text style={styles.label}>Email</Text>
+          <View style={[styles.divider, { backgroundColor: t.border }]} />
+          <Text style={[styles.label, { color: t.text }]}>Email</Text>
           <TextInput
             value={email}
-            onChangeText={(t) => { setEmail(t); clearMsg(); }}
+            onChangeText={(t2) => { setEmail(t2); clearMsg(); }}
             placeholder="you@example.com"
-            placeholderTextColor="#5A6378"
+            placeholderTextColor={t.subtle}
             autoCapitalize="none"
             keyboardType="email-address"
             autoCorrect={false}
-            style={styles.input}
+            style={inputStyle}
           />
-          <Text style={styles.fieldHint}>Real email only — temp-mail / disposable is blocked</Text>
-          <Text style={[styles.label, { marginTop: 12 }]}>Password</Text>
-          <View style={styles.passWrap}>
+          <Text style={[styles.fieldHint, { color: t.subtle }]}>Real email only — temp-mail / disposable is blocked</Text>
+          <Text style={[styles.label, { color: t.text, marginTop: 12 }]}>Password</Text>
+          <View style={[styles.passWrap, { backgroundColor: t.card2, borderColor: t.border }]}>
             <TextInput
               value={password}
-              onChangeText={(t) => { setPassword(t); clearMsg(); }}
+              onChangeText={(t2) => { setPassword(t2); clearMsg(); }}
               placeholder={mode === "signup" ? "Min 8 chars, letters + numbers" : "Your password"}
-              placeholderTextColor="#5A6378"
+              placeholderTextColor={t.subtle}
               secureTextEntry={!showPass}
               autoCapitalize="none"
-              style={[styles.input, { flex: 1, marginTop: 0, borderWidth: 0, paddingVertical: 14 }]}
+              style={[styles.input, { flex: 1, marginTop: 0, borderWidth: 0, paddingVertical: 14, backgroundColor: "transparent", color: t.text }]}
             />
-            <TouchableOpacity onPress={() => setShowPass((s) => !s)} style={styles.eyeBtn}>
-              <Text style={styles.eyeTxt}>{showPass ? "Hide" : "Show"}</Text>
+            <TouchableOpacity onPress={() => setShowPass((s) => !s)} style={[styles.eyeBtn, { backgroundColor: t.card, borderColor: t.border }]}>
+              <Text style={[styles.eyeTxt, { color: t.muted }]}>{showPass ? "Hide" : "Show"}</Text>
             </TouchableOpacity>
           </View>
           {mode === "login" && (
             <TouchableOpacity onPress={() => setForgot(true)} style={{ alignSelf: "flex-end", marginTop: 8 }}>
-              <Text style={styles.linkTxtSmall}>Forgot password?</Text>
+              <Text style={[styles.linkTxtSmall, { color: t.accent }]}>Forgot password?</Text>
             </TouchableOpacity>
           )}
           {mode === "signup" && (
             <>
-              <Text style={[styles.label, { marginTop: 12 }]}>Confirm Password</Text>
+              <Text style={[styles.label, { color: t.text, marginTop: 12 }]}>Confirm Password</Text>
               <TextInput
                 value={confirm}
-                onChangeText={(t) => { setConfirm(t); clearMsg(); }}
+                onChangeText={(t2) => { setConfirm(t2); clearMsg(); }}
                 placeholder="Repeat password"
-                placeholderTextColor="#5A6378"
+                placeholderTextColor={t.subtle}
                 secureTextEntry={!showPass}
                 autoCapitalize="none"
-                style={styles.input}
+                style={inputStyle}
               />
-              <Text style={styles.hint}>8+ characters, at least one letter and one number. No temp-mail.</Text>
+              <Text style={[styles.hint, { color: t.subtle }]}>8+ characters, at least one letter and one number. No temp-mail.</Text>
             </>
           )}
           {error && <Text style={styles.error}>{error}</Text>}
           {info && <Text style={styles.info}>{info}</Text>}
-          <TouchableOpacity onPress={mode === "login" ? handleLogin : handleSignup} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
-            {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>{mode === "login" ? "Log In →" : "Create Account →"}</Text>}
+          <TouchableOpacity onPress={mode === "login" ? handleLogin : handleSignup} disabled={loading} style={[primaryStyle, loading && { opacity: 0.6 }]}>
+            {loading ? <ActivityIndicator color={dark ? "#06080F" : "#fff"} /> : <Text style={primaryTxtStyle}>{mode === "login" ? "Log In →" : "Create Account →"}</Text>}
           </TouchableOpacity>
           {mode === "login" ? (
             <TouchableOpacity onPress={() => switchMode("signup")} style={styles.linkBtn}>
-              <Text style={styles.linkTxt}>Don't have an account? <Text style={{ color: "#fff", fontWeight: "800" }}>Create one</Text></Text>
+              <Text style={[styles.linkTxt, { color: t.accent }]}>Don't have an account? <Text style={{ color: t.text, fontWeight: "800" }}>Create one</Text></Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity onPress={() => switchMode("login")} style={styles.linkBtn}>
-              <Text style={styles.linkTxt}>Already have an account? <Text style={{ color: "#fff", fontWeight: "800" }}>Log In</Text></Text>
+              <Text style={[styles.linkTxt, { color: t.accent }]}>Already have an account? <Text style={{ color: t.text, fontWeight: "800" }}>Log In</Text></Text>
             </TouchableOpacity>
           )}
           <View style={styles.orRow}>
-            <View style={styles.orLine} />
-            <Text style={styles.orTxt}>OR</Text>
-            <View style={styles.orLine} />
+            <View style={[styles.orLine, { backgroundColor: t.border }]} />
+            <Text style={[styles.orTxt, { color: t.subtle }]}>OR</Text>
+            <View style={[styles.orLine, { backgroundColor: t.border }]} />
           </View>
-          <TouchableOpacity onPress={handleGuest} disabled={loading} style={styles.guestBtn}>
+          <TouchableOpacity onPress={handleGuest} disabled={loading} style={[styles.guestBtn, { backgroundColor: t.card2, borderColor: t.border }]}>
             <Text style={styles.guestIcon}>⬢</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.guestTitle}>Continue as Guest — 3 days free</Text>
-              <Text style={styles.guestSub}>No email. Full app. Expires in 3 days → then create account.</Text>
+              <Text style={[styles.guestTitle, { color: t.text }]}>Continue as Guest — 3 days free</Text>
+              <Text style={[styles.guestSub, { color: t.muted }]}>No email. Full app. Expires in 3 days → then create account.</Text>
             </View>
-            <Text style={styles.guestArrow}>→</Text>
+            <Text style={[styles.guestArrow, { color: t.subtle }]}>→</Text>
           </TouchableOpacity>
-          <Text style={styles.foot}>Supabase Auth • SecureStore • Real accounts • com.dont.jail</Text>
-          <Text style={styles.footSmall}>Disposable emails blocked • Password reset via email • Supabase free 50k MAU</Text>
+          <Text style={[styles.foot, { color: t.subtle }]}>Supabase Auth • SecureStore • Real accounts • com.dont.jail</Text>
+          <Text style={[styles.footSmall, { color: t.subtle, opacity: 0.7 }]}>Disposable emails blocked • Password reset via email • Supabase free 50k MAU</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

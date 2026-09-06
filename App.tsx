@@ -11,6 +11,7 @@ import {
   Alert,
   TextInput,
   BackHandler,
+  AppState,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
@@ -31,7 +32,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import AuthScreen from "./src/auth/AuthScreen";
 import { getUser, guestDaysLeft, signOut, User } from "./src/auth/auth";
 import { load as loadStore, save as saveStore, markToday } from "./src/store/useStore";
-import { getForegroundApp, getAppUsage, showOverlay, hideOverlay, canDrawOverlays } from "./src/native/jail";
+import { isUsageAccessGranted, getForegroundApp, getAppUsage, showOverlay, hideOverlay, canDrawOverlays } from "./src/native/jail";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -159,8 +160,14 @@ function AppInner() {
           Object.keys(merged).forEach((k) => (m[k] = 0));
           setUsage(m as any);
         }
-        const perm = await AsyncStorage.getItem("dont_usage_permission");
-        setHasUsagePermission(perm === "granted");
+        try {
+          const granted = await isUsageAccessGranted();
+          setHasUsagePermission(granted);
+          await AsyncStorage.setItem("dont_usage_permission", granted ? "granted" : "not");
+        } catch {
+          const perm = await AsyncStorage.getItem("dont_usage_permission");
+          setHasUsagePermission(perm === "granted");
+        }
         try {
           const canOverlay = await canDrawOverlays();
           setHasOverlayPermission(canOverlay);
@@ -373,6 +380,20 @@ function AppInner() {
     return () => sub.remove();
   }, [jailed, tab]);
 
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (s) => {
+      if (s === "active") {
+        try {
+          const g = await isUsageAccessGranted();
+          setHasUsagePermission(g);
+          const o = await canDrawOverlays();
+          setHasOverlayPermission(o);
+        } catch {}
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   if (!fontsLoaded || authLoading) return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
 
   return (
@@ -386,9 +407,13 @@ function AppInner() {
             const u = await getUser();
             setUser(u);
           }}
+          theme={theme}
+          isDark={isDark}
         />
       ) : !onboarded ? (
         <Onboarding
+          theme={theme}
+          isDark={isDark}
           onDone={async () => {
             const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
             await AsyncStorage.setItem("dont_onboarded", "1");
@@ -455,13 +480,17 @@ function AppInner() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={async () => {
-                    await AsyncStorage.setItem("dont_usage_permission", "granted");
-                    setHasUsagePermission(true);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    try {
+                      const ok = await isUsageAccessGranted();
+                      setHasUsagePermission(ok);
+                      await AsyncStorage.setItem("dont_usage_permission", ok ? "granted" : "not");
+                      if (ok) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      else Alert.alert("Not yet enabled", "Please find DON'T in the list and enable the toggle, then tap Refresh.");
+                    } catch {}
                   }}
                   style={{ backgroundColor: "#0F1320", borderWidth: 1, borderColor: "#1A1F2E", padding: 12, borderRadius: 10, alignItems: "center" }}
                 >
-                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>I've Allowed ✓</Text>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>Check Again ✓</Text>
                 </TouchableOpacity>
               </View>
               <Text style={{ color: "#5A6378", fontSize: 10, textAlign: "center" }}>You can revoke anytime. 100% offline, no data leaves device.</Text>
@@ -591,7 +620,7 @@ function AppInner() {
           </View>
 
           {/* JAIL OVERLAY — full screen sophisticated */}
-          {jailed && <JailOverlay apps={allApps} appId={jailed} onClose={() => { hideOverlay().catch(() => {}); setJailed(null); }} onUnlock={(via) => {
+          {jailed && <JailOverlay apps={allApps} appId={jailed} theme={theme} isDark={isDark} onClose={() => { hideOverlay().catch(() => {}); setJailed(null); }} onUnlock={(via) => {
             hideOverlay().catch(() => {});
             if (via === "ad") setAdWatchCount(c => c + 1);
             setUsage(u => ({ ...u, [jailed!]: 0 }));
@@ -615,7 +644,7 @@ export default function App() {
   );
 }
 
-function Onboarding({ onDone }: { onDone: () => void }) {
+function Onboarding({ onDone, theme, isDark }: { onDone: () => void; theme: any; isDark: boolean }) {
   const [i, setI] = useState(0);
   const slides = [
     {
@@ -639,20 +668,20 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   ];
   const s = slides[i];
   return (
-    <SafeAreaView style={{ flex: 1, padding: 24 }}>
+    <SafeAreaView style={{ flex: 1, padding: 24, backgroundColor: theme.bg }}>
       <View style={{ flex: 1, justifyContent: "center" }}>
-        <Text style={styles.mono}>DON'T • {s.k} / 03</Text>
+        <Text style={[styles.mono, { color: theme.muted }]}>DON'T • {s.k} / 03</Text>
         <Text style={[styles.onTitle, { color: s.accent }]}>{s.title}</Text>
-        <Text style={styles.onDesc}>{s.desc}</Text>
+        <Text style={[styles.onDesc, { color: theme.muted }]}>{s.desc}</Text>
 
         <View style={styles.vaultPreview}>
-          <LinearGradient colors={["#0F1320", "#1A1F2E"]} style={styles.vaultCard}>
-            <View style={styles.vaultDoor}>
-              <View style={styles.vaultBolt} />
-              <Text style={styles.vaultIcon}>▦</Text>
-              <View style={styles.vaultBolt} />
+          <LinearGradient colors={isDark ? (["#0F1320", "#1A1F2E"] as any) : (["#FFFFFF", "#F1F5F9"] as any)} style={[styles.vaultCard, { borderColor: theme.border }]}>
+            <View style={[styles.vaultDoor, { backgroundColor: theme.card2, borderColor: theme.border }]}>
+              <View style={[styles.vaultBolt, { backgroundColor: theme.border }]} />
+              <Text style={[styles.vaultIcon, { color: theme.text }]}>▦</Text>
+              <View style={[styles.vaultBolt, { backgroundColor: theme.border }]} />
             </View>
-            <Text style={styles.vaultLabel}>VAULT DOOR • 60fps spring</Text>
+            <Text style={[styles.vaultLabel, { color: theme.subtle }]}>VAULT DOOR • 60fps spring</Text>
           </LinearGradient>
         </View>
       </View>
@@ -660,17 +689,17 @@ function Onboarding({ onDone }: { onDone: () => void }) {
       <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
         <View style={{ flexDirection: "row", gap: 6, flex: 1 }}>
           {slides.map((_, idx) => (
-            <View key={idx} style={[styles.dotLine, idx === i && { backgroundColor: "#fff", width: 28 }]} />
+            <View key={idx} style={[styles.dotLine, { backgroundColor: theme.border }, idx === i && { backgroundColor: isDark ? "#fff" : theme.text, width: 28 }]} />
           ))}
         </View>
         <TouchableOpacity
           onPress={() => (i < 2 ? setI(i + 1) : onDone())}
-          style={styles.primaryBtn}
+          style={[styles.primaryBtn, { backgroundColor: isDark ? "#fff" : theme.text }]}
         >
-          <Text style={styles.primaryBtnTxt}>{i < 2 ? "Next →" : "Enter DON'T"}</Text>
+          <Text style={[styles.primaryBtnTxt, { color: isDark ? "#06080F" : theme.bg }]}>{i < 2 ? "Next →" : "Enter DON'T"}</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.monoCenter}>Offline-first • AdMob online • AAB ready • com.dont.jail</Text>
+      <Text style={[styles.monoCenter, { color: theme.subtle }]}>Offline-first • AdMob online • AAB ready • com.dont.jail</Text>
     </SafeAreaView>
   );
 }
@@ -838,16 +867,16 @@ function VaultTab({ pomodoro, setPomodoro, pomRunning, setPomRunning, theme, isD
   const pct = 1 - pomodoro / (25 * 60);
   return (
     <View style={{ padding: 16, gap: 16, alignItems: "center" }}>
-      <Text style={styles.sectionTitle}>Focus Vault • Pomodoro</Text>
-      <Text style={styles.sectionSub}>25/5 • ambient rain • streak +1 on complete • interstitial after</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Focus Vault • Pomodoro</Text>
+      <Text style={[styles.sectionSub, { color: theme.muted }]}>25/5 • ambient rain • streak +1 on complete • interstitial after</Text>
 
-      <View style={styles.vaultTimerCard}>
-        <View style={styles.vaultRingWrap}>
-          <View style={styles.vaultRingBg} />
+      <View style={[styles.vaultTimerCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={[styles.vaultRingWrap, { backgroundColor: theme.card2, borderColor: theme.border }]}>
+          <View style={[styles.vaultRingBg, { backgroundColor: theme.card2 }]} />
           <View style={[styles.vaultRingFill, { height: `${pct * 100}%` }]} />
           <View style={styles.vaultRingCenter}>
-            <Text style={styles.vaultTime}>{mins}:{secs}</Text>
-            <Text style={styles.monoSmall}>{pomRunning ? "FOCUSING" : "READY"}</Text>
+            <Text style={[styles.vaultTime, { color: theme.text }]}>{mins}:{secs}</Text>
+            <Text style={[styles.monoSmall, { color: theme.muted }]}>{pomRunning ? "FOCUSING" : "READY"}</Text>
           </View>
         </View>
 
@@ -888,8 +917,8 @@ function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, theme, isDark,
   const level = Math.floor(streak / 3) + 1;
   return (
     <View style={{ padding: 16, gap: 16 }}>
-      <View style={styles.profileCard}>
-        <LinearGradient colors={["#1A1F2E", "#0F1320"]} style={styles.profileGrad}>
+      <View style={[styles.profileCard, { borderColor: theme.border }]}>
+        <LinearGradient colors={isDark ? (["#1A1F2E", "#0F1320"] as any) : (["#FFFFFF", "#F1F5F9"] as any)} style={styles.profileGrad}>
           <View style={styles.avatar}>
             <Text style={styles.avatarTxt}>{user?.email?.[0]?.toUpperCase() || "LD"}</Text>
           </View>
@@ -914,10 +943,10 @@ function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, theme, isDark,
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionTitle}>90-Day Heatmap</Text>
-      <View style={styles.heatmap}>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>90-Day Heatmap</Text>
+      <View style={[styles.heatmap, { backgroundColor: theme.card, borderColor: theme.border }]}>
         {days.map((v, i) => (
-          <View key={i} style={[styles.heatCell, v ? { backgroundColor: v ? "#22C55E" : "#1A1F2E" } : null]} />
+          <View key={i} style={[styles.heatCell, { backgroundColor: theme.card2, borderColor: theme.border }, v ? { backgroundColor: "#22C55E", borderColor: "#22C55E" } : null]} />
         ))}
       </View>
       <Text style={styles.monoSmallCenter}>■ jailed day • □ free day • GitHub-style</Text>
@@ -949,7 +978,7 @@ function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, theme, isDark,
   );
 }
 
-function JailOverlay({ apps, appId, onClose, onUnlock }: { apps: Record<string, AppConfig>; appId: AppId; onClose: () => void; onUnlock: (via: "task" | "ad") => void }) {
+function JailOverlay({ apps, appId, theme, isDark, onClose, onUnlock }: { apps: Record<string, AppConfig>; appId: AppId; theme: any; isDark: boolean; onClose: () => void; onUnlock: (via: "task" | "ad") => void }) {
   const [mode, setMode] = useState<"choose" | "ad" | "task">("choose");
   const [adProgress, setAdProgress] = useState(0);
   const scale = useRef(new Animated.Value(0.9)).current;
@@ -966,18 +995,18 @@ function JailOverlay({ apps, appId, onClose, onUnlock }: { apps: Record<string, 
   const app = apps[appId] || { name: appId, limit: 30, icon: "⬢", color: "#8B93B8" };
 
   return (
-    <View style={styles.overlay}>
-      <LinearGradient colors={["#06080F", "#0F0F1A"]} style={StyleSheet.absoluteFill} />
+    <View style={[styles.overlay, { backgroundColor: theme.bg }]}>
+      <LinearGradient colors={isDark ? (["#06080F", "#0F0F1A"] as any) : (["#F8FAFC", "#FFFFFF"] as any)} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={{ flex: 1, padding: 20 }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Text style={styles.mono}>🔒 JAIL • {app.name.toUpperCase()}</Text>
+          <Text style={[styles.mono, { color: theme.muted }]}>🔒 JAIL • {app.name.toUpperCase()}</Text>
           <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
             <Text style={styles.closeTxt}>✕</Text>
           </TouchableOpacity>
         </View>
 
-        <Animated.View style={[styles.jailCard, { transform: [{ scale }] }]}>
-          <View style={styles.jailDoorLarge}>
+        <Animated.View style={[styles.jailCard, { backgroundColor: theme.card, borderColor: theme.border, transform: [{ scale }] }]}>
+          <View style={[styles.jailDoorLarge, { backgroundColor: theme.card2, borderColor: theme.border }]}>
             <View style={styles.jailDoorBar} />
             <View style={styles.jailDoorBar} />
             <View style={styles.jailDoorBar} />
@@ -985,8 +1014,8 @@ function JailOverlay({ apps, appId, onClose, onUnlock }: { apps: Record<string, 
             <View style={styles.jailDoorBar} />
             <View style={styles.jailDoorBar} />
           </View>
-          <Text style={styles.jailTitle}>{app.name} is in jail.</Text>
-          <Text style={styles.jailSub}>You hit {app.limit}m today. Vault door is locked for 12m.</Text>
+          <Text style={[styles.jailTitle, { color: theme.text }]}>{app.name} is in jail.</Text>
+          <Text style={[styles.jailSub, { color: theme.muted }]}>You hit {app.limit}m today. Vault door is locked for 12m.</Text>
           <Text style={styles.monoSmallCenter}>Offline lock • No workaround • Airplane mode still jailed</Text>
         </Animated.View>
 
