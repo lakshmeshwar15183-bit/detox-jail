@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "DET\u00d8X \u2014 Screen Jail",
-    "slug": "detox-jail",
+    "name": "DON'T — Screen Jail",
+    "slug": "dont",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "detox",
+    "scheme": "dont",
     "userInterfaceStyle": "dark",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.detox.jail"
+      "bundleIdentifier": "com.dont.jail"
     },
     "android": {
-      "package": "com.detox.jail",
+      "package": "com.dont.jail",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -27,7 +27,7 @@
         "com.android.vending.BILLING"
       ],
       "blockedPermissions": [],
-      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.detox.jail"
+      "playStoreUrl": "https://play.google.com/store/apps/details?id=com.dont.jail"
     },
     "web": {
       "bundler": "metro",
@@ -66,7 +66,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "detox-jail-0000-0000-000000000000"
+        "projectId": "dont-jail-0000-0000-000000000000"
       },
       "supabaseUrl": "https://toscljrivrawvlfebdzz.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvc2NsanJpdnJhd3ZsZmViZHp6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2MDc1MzUsImV4cCI6MjA5ODE4MzUzNX0.XnQrgOSKbXaUag58E05tjXh8cS05eIv38RXaMrZG_LU"

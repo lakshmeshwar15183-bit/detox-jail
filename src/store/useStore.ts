@@ -1,4 +1,4 @@
-// DETØX store — offline-first (AsyncStorage-ready)
+// DON'T store — offline-first (AsyncStorage-ready)
 // All core logic runs offline. No server. 0 cost.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -10,7 +10,7 @@ export type JailConfig = {
   level: number;
 };
 
-const KEY = "detox_jail_v1";
+const KEY = "dont_jail_v1";
 
 export async function load(): Promise<JailConfig | null> {
   const raw = await AsyncStorage.getItem(KEY);

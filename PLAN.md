@@ -1,10 +1,10 @@
-# DETØX — Screen Jail | Play Store Ready Plan (10000%)
+# DON'T — Screen Jail | Play Store Ready Plan (10000%)
 
 > **Tagline:** Your apps go to jail so you can go free.
-> **Package:** `com.detox.jail` | **Version:** 1.0.0 | **Expo SDK:** 57 | **Build:** AAB (Play Store)
+> **Package:** `com.dont.jail` | **Version:** 1.0.0 | **Expo SDK:** 57 | **Build:** AAB (Play Store)
 
 ## 1. Vision (sophisticated, everyone needs)
-Every human wastes 3-5h/day doom-scrolling. Willpower apps fail because they are boring/punitive. DETØX is **premium, playful, powerful** — like Apple Screen Time meets Duolingo streaks meets jail aesthetic. Feels expensive, works offline, monetizes online.
+Every human wastes 3-5h/day doom-scrolling. Willpower apps fail because they are boring/punitive. DON'T is **premium, playful, powerful** — like Apple Screen Time meets Duolingo streaks meets jail aesthetic. Feels expensive, works offline, monetizes online.
 
 ## 2. Core Principles
 - **Offline-first:** All jail logic (timers, locks, stats) = AsyncStorage + local UsageStats mock → works airplane mode.
@@ -56,7 +56,7 @@ No AI APIs, no server → $0/month.
 Avg user: 3 rewarded + 2 interstitial + banner = ~$0.04-0.07/day → 10k DAU = $400-700/day.
 
 ## 7. Play Store Checklist (10000%)
-- [x] app.json: name, package `com.detox.jail`, versionCode 1, adaptive icon, permissions (PACKAGE_USAGE_STATS, QUERY_ALL_PACKAGES hint)
+- [x] app.json: name, package `com.dont.jail`, versionCode 1, adaptive icon, permissions (PACKAGE_USAGE_STATS, QUERY_ALL_PACKAGES hint)
 - [x] eas.json: production → aab, preview → apk
 - [x] Privacy Policy (generated), Data Safety: No data collected (AdMob self-declared)
 - [x] Assets: 512x512 icon, 1024x500 feature graphic, 2 phone screenshots (built-in)
@@ -66,7 +66,7 @@ Avg user: 3 rewarded + 2 interstitial + banner = ~$0.04-0.07/day → 10k DAU = $
 
 ## 8. File Structure
 ```
-detox/
+dont/
   app.json
   eas.json
   package.json

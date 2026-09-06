@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
-PROJECT="/var/folders/_9/w0f85fv10494qtdm7v8p5k_80000gn/T/opencode/detox"
-echo "=== DETØX AAB Builder ==="
+PROJECT="/var/folders/_9/w0f85fv10494qtdm7v8p5k_80000gn/T/opencode/dont"
+echo "=== DON'T AAB Builder ==="
 echo "Project: $PROJECT"
 cd "$PROJECT"
 echo ""

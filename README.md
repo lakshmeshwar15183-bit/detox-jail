@@ -1,8 +1,8 @@
-# DETØX — Screen Jail (Play Store Ready AAB)
+# DON'T — Screen Jail (Play Store Ready AAB)
 
 > Your apps go to jail so you can go free. Premium dark UI, offline-first, AdMob monetized.
 
-**Package:** `com.detox.jail`  **Version:** 1.0.0  **SDK:** Expo 57  **Build:** AAB
+**Package:** `com.dont.jail`  **Version:** 1.0.0  **SDK:** Expo 57  **Build:** AAB
 
 ### Offline for people, Online for returns
 - **Offline:** Jail, timers, streak, heatmap, Focus Vault — all AsyncStorage, works airplane mode.
@@ -51,6 +51,6 @@ eas submit --platform android   # or upload .aab manually to Play Console
 - Privacy Policy: PRIVACY.md (host on Notion/GitHub Pages)
 
 ### Location
-`/var/folders/_9/w0f85fv10494qtdm7v8p5k_80000gn/T/opencode/detox`
-Move to `~/detox` when ready: `cp -r /var/folders/.../T/opencode/detox ~/detox`
+`/var/folders/_9/w0f85fv10494qtdm7v8p5k_80000gn/T/opencode/dont`
+Move to `~/dont` when ready: `cp -r /var/folders/.../T/opencode/dont ~/dont`
 

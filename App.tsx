@@ -78,7 +78,7 @@ export default function App() {
       setUser(u);
       setAuthLoading(false);
       if (u) {
-        const onboard = await import("@react-native-async-storage/async-storage").then((m) => m.default.getItem("detox_onboarded"));
+        const onboard = await import("@react-native-async-storage/async-storage").then((m) => m.default.getItem("dont_onboarded"));
         if (onboard) setOnboarded(true);
       }
     })();
@@ -127,7 +127,7 @@ export default function App() {
         <Onboarding
           onDone={async () => {
             const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
-            await AsyncStorage.setItem("detox_onboarded", "1");
+            await AsyncStorage.setItem("dont_onboarded", "1");
             setOnboarded(true);
           }}
         />
@@ -136,7 +136,7 @@ export default function App() {
           {/* HEADER */}
           <View style={styles.header}>
             <View>
-              <Text style={styles.logo}>DETØX</Text>
+              <Text style={styles.logo}>DON'T</Text>
               <Text style={styles.sub}>
                 {user?.isGuest ? `Guest • ${guestDaysLeft(user)}d left` : user?.email} • Level 12 Warden
               </Text>
@@ -233,7 +233,7 @@ export default function App() {
             <View style={styles.bannerAd}>
               <Text style={styles.bannerTxt}>AdMob Banner — 320×50 • Adaptive • Offline hides</Text>
               <View style={styles.bannerAdInner}>
-                <Text style={styles.bannerAdLabel}>DETØX Pro — Remove ads ₹99</Text>
+                <Text style={styles.bannerAdLabel}>DON'T Pro — Remove ads ₹99</Text>
               </View>
             </View>
           </View>
@@ -278,7 +278,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   return (
     <SafeAreaView style={{ flex: 1, padding: 24 }}>
       <View style={{ flex: 1, justifyContent: "center" }}>
-        <Text style={styles.mono}>DETØX • {s.k} / 03</Text>
+        <Text style={styles.mono}>DON'T • {s.k} / 03</Text>
         <Text style={[styles.onTitle, { color: s.accent }]}>{s.title}</Text>
         <Text style={styles.onDesc}>{s.desc}</Text>
 
@@ -304,10 +304,10 @@ function Onboarding({ onDone }: { onDone: () => void }) {
           onPress={() => (i < 2 ? setI(i + 1) : onDone())}
           style={styles.primaryBtn}
         >
-          <Text style={styles.primaryBtnTxt}>{i < 2 ? "Next →" : "Enter DETØX"}</Text>
+          <Text style={styles.primaryBtnTxt}>{i < 2 ? "Next →" : "Enter DON'T"}</Text>
         </TouchableOpacity>
       </View>
-      <Text style={styles.monoCenter}>Offline-first • AdMob online • AAB ready • com.detox.jail</Text>
+      <Text style={styles.monoCenter}>Offline-first • AdMob online • AAB ready • com.dont.jail</Text>
     </SafeAreaView>
   );
 }
