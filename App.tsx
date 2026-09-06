@@ -10,9 +10,10 @@ import {
   Platform,
   Alert,
   TextInput,
+  BackHandler,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import {
@@ -55,9 +56,38 @@ const ADS = {
   },
 };
 
+const THEME_DARK = {
+  bg: "#06080F",
+  bgGrad: ["#06080F", "#0A0E1A"] as const,
+  card: "#0F1320",
+  card2: "#0A0D18",
+  border: "#1A1F2E",
+  border2: "#2A3148",
+  text: "#fff",
+  muted: "#8B93B8",
+  subtle: "#5A6378",
+  accent: "#60A5FA",
+  success: "#22C55E",
+  overlay: "rgba(6,8,15,0.92)",
+};
+const THEME_LIGHT = {
+  bg: "#F8FAFC",
+  bgGrad: ["#F8FAFC", "#FFFFFF"] as const,
+  card: "#FFFFFF",
+  card2: "#F1F5F9",
+  border: "#E2E8F0",
+  border2: "#CBD5E1",
+  text: "#0F172A",
+  muted: "#64748B",
+  subtle: "#94A3B8",
+  accent: "#3B82F6",
+  success: "#16A34A",
+  overlay: "rgba(248,250,252,0.92)",
+};
+
 const { width } = Dimensions.get("window");
 
-export default function App() {
+function AppInner() {
   const [fontsLoaded, fontError] = useSpaceGrotesk({
     SpaceGrotesk_600SemiBold,
     SpaceGrotesk_700Bold,
@@ -84,6 +114,9 @@ export default function App() {
   const [hasUsagePermission, setHasUsagePermission] = useState<boolean | null>(null);
   const [hasOverlayPermission, setHasOverlayPermission] = useState<boolean | null>(null);
   const [appsConfig, setAppsConfig] = useState<Record<string, AppConfig>>(DEFAULT_APPS);
+  const [isDark, setIsDark] = useState(true);
+  const insets = useSafeAreaInsets();
+  const theme = isDark ? THEME_DARK : THEME_LIGHT;
   const allApps = appsConfig;
   const vaultAnim = useRef(new Animated.Value(0)).current;
 
@@ -134,6 +167,9 @@ export default function App() {
         } catch {
           setHasOverlayPermission(false);
         }
+        const savedTheme = await AsyncStorage.getItem("dont_theme");
+        if (savedTheme === "light") setIsDark(false);
+        else if (savedTheme === "dark") setIsDark(true);
       } catch {
         setHasUsagePermission(false);
         setHasOverlayPermission(false);
@@ -187,6 +223,11 @@ export default function App() {
     });
     AsyncStorage.setItem("dont_custom_apps", JSON.stringify(toSave));
   }, [appsConfig, authLoading]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    AsyncStorage.setItem("dont_theme", isDark ? "dark" : "light");
+  }, [isDark, authLoading]);
 
   const addCustomApp = (name: string, packageName: string, limit: number) => {
     if (!name.trim()) return;
@@ -282,12 +323,62 @@ export default function App() {
     };
   }, [hasUsagePermission, hasOverlayPermission, allApps, jailed, authLoading]);
 
-  if (!fontsLoaded || authLoading) return <View style={{ flex: 1, backgroundColor: "#06080F" }} />;
+  // auto-ask permissions
+  useEffect(() => {
+    if (hasUsagePermission === false) {
+      const t = setTimeout(() => {
+        Alert.alert("Allow Usage Access", "DON'T needs to see app usage to jail Instagram/YouTube etc. when limit is hit. Tap Open Settings → find DON'T → enable.", [
+          { text: "Later", style: "cancel" },
+          { text: "Open Settings", onPress: async () => { try { await IntentLauncher.startActivityAsync("android.settings.USAGE_ACCESS_SETTINGS"); } catch {} } },
+        ]);
+      }, 1200);
+      return () => clearTimeout(t);
+    }
+  }, [hasUsagePermission]);
+  useEffect(() => {
+    if (hasOverlayPermission === false) {
+      const t = setTimeout(() => {
+        Alert.alert("Allow Display over other apps", "To show jail door on top of blocked apps, allow DON'T to display over other apps.", [
+          { text: "Later", style: "cancel" },
+          { text: "Open Settings", onPress: async () => { try { const { requestOverlayPermission } = await import("./src/native/jail"); await requestOverlayPermission(); } catch {} } },
+        ]);
+      }, 1800);
+      return () => clearTimeout(t);
+    }
+  }, [hasOverlayPermission]);
+
+  // back: close jail → go Today → double-press exit
+  const lastBackRef = useRef<number>(0);
+  useEffect(() => {
+    const onBack = () => {
+      if (jailed) {
+        hideOverlay().catch(() => {});
+        setJailed(null);
+        return true;
+      }
+      if (tab !== "today") {
+        setTab("today" as any);
+        return true;
+      }
+      const now = Date.now();
+      if (now - lastBackRef.current < 2000) return false;
+      lastBackRef.current = now;
+      if (Platform.OS === "android") {
+        const { ToastAndroid } = require("react-native");
+        ToastAndroid.show("Press again to exit DON'T", ToastAndroid.SHORT);
+      }
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBack);
+    return () => sub.remove();
+  }, [jailed, tab]);
+
+  if (!fontsLoaded || authLoading) return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <LinearGradient colors={["#06080F", "#0A0E1A"]} style={StyleSheet.absoluteFill} />
+    <View style={[styles.root, { backgroundColor: theme.bg }]}>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <LinearGradient colors={theme.bgGrad as any} style={StyleSheet.absoluteFill} />
 
       {!user ? (
         <AuthScreen
@@ -307,19 +398,28 @@ export default function App() {
       ) : (
         <SafeAreaView style={{ flex: 1 }}>
           {/* HEADER */}
-          <View style={styles.header}>
+          <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
             <View>
-              <Text style={styles.logo}>DON'T</Text>
-              <Text style={styles.sub}>
+              <Text style={[styles.logo, { color: theme.text }]}>DON'T</Text>
+              <Text style={[styles.sub, { color: theme.muted }]}>
                 {user?.isGuest ? `Guest • ${guestDaysLeft(user)}d left` : user?.email} • Level {Math.floor(streak / 3) + 1} Warden
               </Text>
             </View>
             <View style={styles.headerRight}>
-              <View style={styles.streakPill}>
-                <Text style={styles.streakTxt}>🔥 {streak}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setIsDark(!isDark);
+                }}
+                style={[styles.streakPill, { backgroundColor: theme.card2, borderColor: theme.border }]}
+              >
+                <Text style={[styles.streakTxt, { color: theme.text }]}>{isDark ? "☀" : "◐"}</Text>
+              </TouchableOpacity>
+              <View style={[styles.streakPill, { backgroundColor: theme.card2, borderColor: theme.border }]}>
+                <Text style={[styles.streakTxt, { color: theme.text }]}>🔥 {streak}</Text>
               </View>
-              <View style={styles.savedPill}>
-                <Text style={styles.savedTxt}>{Math.floor(timeSaved / 60)}h saved</Text>
+              <View style={[styles.savedPill, { backgroundColor: isDark ? "#0F1A12" : "#F0FDF4", borderColor: isDark ? "#1E3A1A" : "#BBF7D0" }]}>
+                <Text style={[styles.savedTxt, { color: theme.success }]}>{Math.floor(timeSaved / 60)}h saved</Text>
               </View>
             </View>
           </View>
@@ -400,7 +500,7 @@ export default function App() {
             </View>
           )}
 
-          <ScrollView contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+          <ScrollView contentContainerStyle={{ paddingBottom: 110 + insets.bottom }} showsVerticalScrollIndicator={false}>
             {tab === "today" && (
               <HomeTab
                 apps={allApps}
@@ -409,6 +509,8 @@ export default function App() {
                 setJailed={setJailed}
                 setTab={setTab}
                 timeSaved={timeSaved}
+                theme={theme}
+                isDark={isDark}
               />
             )}
             {tab === "jail" && (
@@ -416,16 +518,14 @@ export default function App() {
                 apps={allApps}
                 jailed={jailed}
                 setJailed={setJailed}
-                setUsage={setUsage}
-                setTimeSaved={setTimeSaved}
-                setAdWatchCount={setAdWatchCount}
-                adWatchCount={adWatchCount}
                 onAddApp={addCustomApp}
                 onRemoveApp={removeCustomApp}
+                theme={theme}
+                isDark={isDark}
               />
             )}
             {tab === "vault" && (
-              <VaultTab pomodoro={pomodoro} setPomodoro={setPomodoro} pomRunning={pomRunning} setPomRunning={setPomRunning} />
+              <VaultTab pomodoro={pomodoro} setPomodoro={setPomodoro} pomRunning={pomRunning} setPomRunning={setPomRunning} theme={theme} isDark={isDark} />
             )}
             {tab === "you" && (
               <YouTab
@@ -434,12 +534,16 @@ export default function App() {
                 adWatchCount={adWatchCount}
                 heatmap={heatmap}
                 user={user}
+                theme={theme}
+                isDark={isDark}
                 onClear={async () => {
                   const { clear } = await import("./src/store/useStore");
                   await clear();
+                  await AsyncStorage.removeItem("dont_custom_apps");
                   setStreak(0);
                   setTimeSaved(0);
-                  setUsage({ instagram: 0, youtube: 0, reddit: 0, twitter: 0 });
+                  setUsage(Object.fromEntries(Object.keys(DEFAULT_APPS).map((k) => [k, 0])) as any);
+                  setAppsConfig({ ...DEFAULT_APPS });
                   setAdWatchCount(0);
                   setHeatmap(Array.from({ length: 90 }, () => 0));
                   setJailed(null);
@@ -453,8 +557,8 @@ export default function App() {
             )}
           </ScrollView>
 
-          {/* BOTTOM NAV — sophisticated glass */}
-          <View style={styles.tabBarWrap}>
+          {/* BOTTOM NAV — auto-adjusts for gesture vs 3-button nav */}
+          <View style={[styles.tabBarWrap, { backgroundColor: theme.overlay, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 12) }]}>
             <View style={styles.tabBar}>
               {[
                 { id: "today", label: "Today", icon: "◯" },
@@ -500,6 +604,14 @@ export default function App() {
         </SafeAreaView>
       )}
     </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <AppInner />
+    </SafeAreaProvider>
   );
 }
 
@@ -563,31 +675,31 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   );
 }
 
-function HomeTab({ apps, usage, jailed, setJailed, setTab, timeSaved }: any) {
+function HomeTab({ apps, usage, jailed, setJailed, setTab, timeSaved, theme, isDark }: any) {
   return (
     <View style={{ padding: 16, gap: 14 }}>
       {/* HERO — time saved */}
-      <LinearGradient colors={["#0F1320", "#111A2E"]} style={styles.hero}>
+      <LinearGradient colors={isDark ? ["#0F1320", "#111A2E"] : ["#FFFFFF", "#F1F5F9"]} style={[styles.hero, { borderColor: theme.border }]}>
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <View>
-            <Text style={styles.mono}>TODAY • {new Date().toLocaleDateString()}</Text>
-            <Text style={styles.heroTitle}>{Math.floor(timeSaved / 60)}h {timeSaved % 60}m saved</Text>
-            <Text style={styles.heroSub}>{timeSaved === 0 ? "No time saved yet • Jail an app to start" : `+18m vs start • ${Math.floor(timeSaved / 18)} jails avoided`}</Text>
+            <Text style={[styles.mono, { color: theme.muted }]}>TODAY • {new Date().toLocaleDateString()}</Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>{Math.floor(timeSaved / 60)}h {timeSaved % 60}m saved</Text>
+            <Text style={[styles.heroSub, { color: theme.success }]}>{timeSaved === 0 ? "No time saved yet • Jail an app to start" : `+18m vs start • ${Math.floor(timeSaved / 18)} jails avoided`}</Text>
           </View>
-          <View style={styles.heroRing}>
-            <Text style={styles.heroRingTxt}>{timeSaved === 0 ? "0%" : `${Math.min(100, Math.round((timeSaved / 120) * 100))}%`}</Text>
-            <Text style={styles.monoSmall}>FOCUS</Text>
+          <View style={[styles.heroRing, { backgroundColor: theme.card2, borderColor: theme.success }]}>
+            <Text style={[styles.heroRingTxt, { color: theme.success }]}>{timeSaved === 0 ? "0%" : `${Math.min(100, Math.round((timeSaved / 120) * 100))}%`}</Text>
+            <Text style={[styles.monoSmall, { color: theme.muted }]}>FOCUS</Text>
           </View>
         </View>
-        <View style={styles.heroBarTrack}>
+        <View style={[styles.heroBarTrack, { backgroundColor: theme.card2, borderColor: theme.border }]}>
           <View style={[styles.heroBarFill, { width: timeSaved === 0 ? "0%" : `${Math.min(100, Math.round((timeSaved / 120) * 100))}%` }]} />
         </View>
       </LinearGradient>
 
       {/* APPS — sophisticated rings */}
       <View style={styles.sectionRow}>
-        <Text style={styles.sectionTitle}>Jailed Apps</Text>
-        <Text style={styles.sectionLink}>Edit →</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Jailed Apps</Text>
+        <Text style={[styles.sectionLink, { color: theme.accent }]}>Edit →</Text>
       </View>
 
       <View style={styles.appGrid}>
@@ -603,17 +715,17 @@ function HomeTab({ apps, usage, jailed, setJailed, setTab, timeSaved }: any) {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 if (isJailed) setJailed(id);
               }}
-              style={[styles.appCard, isJailed && styles.appCardJailed]}
+              style={[styles.appCard, { backgroundColor: theme.card, borderColor: isJailed ? "#EF444433" : theme.border }, isJailed && { backgroundColor: isDark ? "#14101A" : "#FFF1F2" }]}
             >
               <View style={[styles.appIcon, { backgroundColor: app.color + "18", borderColor: app.color + "40" }]}>
                 <Text style={[styles.appIconTxt, { color: app.color }]}>{app.icon}</Text>
               </View>
-              <Text style={styles.appName}>{app.name}</Text>
-              <Text style={styles.monoSmall}>{used}m / {app.limit}m</Text>
-              <View style={styles.ringTrack}>
+              <Text style={[styles.appName, { color: theme.text }]}>{app.name}</Text>
+              <Text style={[styles.monoSmall, { color: theme.muted }]}>{used}m / {app.limit}m</Text>
+              <View style={[styles.ringTrack, { backgroundColor: theme.card2, borderColor: theme.border }]}>
                 <View style={[styles.ringFill, { width: `${pct}%`, backgroundColor: isJailed ? "#EF4444" : app.color }]} />
               </View>
-              <Text style={[styles.appStatus, isJailed && { color: "#EF4444" }]}>{isJailed ? "🔒 JAILED" : pct > 80 ? "⚠ " + Math.round(pct) + "%" : "○ free"}</Text>
+              <Text style={[styles.appStatus, { color: theme.muted }, isJailed && { color: "#EF4444" }]}>{isJailed ? "🔒 JAILED" : pct > 80 ? "⚠ " + Math.round(pct) + "%" : "○ free"}</Text>
             </TouchableOpacity>
           );
         })}
@@ -621,34 +733,34 @@ function HomeTab({ apps, usage, jailed, setJailed, setTab, timeSaved }: any) {
 
       {/* QUICK ACTIONS */}
       <View style={styles.qaRow}>
-        <TouchableOpacity onPress={() => setTab("vault")} style={styles.qaCard}>
-          <Text style={styles.qaIcon}>◐</Text>
-          <Text style={styles.qaTitle}>Focus Vault</Text>
-          <Text style={styles.monoSmall}>25:00 • Start</Text>
+        <TouchableOpacity onPress={() => setTab("vault")} style={[styles.qaCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.qaIcon, { color: theme.accent }]}>◐</Text>
+          <Text style={[styles.qaTitle, { color: theme.text }]}>Focus Vault</Text>
+          <Text style={[styles.monoSmall, { color: theme.muted }]}>25:00 • Start</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setTab("jail")} style={styles.qaCard}>
-          <Text style={styles.qaIcon}>▦</Text>
-          <Text style={styles.qaTitle}>Jail Breach</Text>
-          <Text style={styles.monoSmall}>{jailed ? "1 jailed" : "All free"}</Text>
+        <TouchableOpacity onPress={() => setTab("jail")} style={[styles.qaCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.qaIcon, { color: theme.accent }]}>▦</Text>
+          <Text style={[styles.qaTitle, { color: theme.text }]}>Jail Breach</Text>
+          <Text style={[styles.monoSmall, { color: theme.muted }]}>{jailed ? "1 jailed" : "All free"}</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.noteCard}>
-        <Text style={styles.noteTitle}>How offline works ✈︎</Text>
-        <Text style={styles.noteDesc}>All timers run locally (AsyncStorage). No internet needed. Ads load only when online — fail gracefully offline. No data leaves your phone.</Text>
+      <View style={[styles.noteCard, { backgroundColor: theme.card2, borderColor: theme.border }]}>
+        <Text style={[styles.noteTitle, { color: theme.text }]}>How offline works ✈︎</Text>
+        <Text style={[styles.noteDesc, { color: theme.muted }]}>All timers run locally (AsyncStorage). No internet needed. Ads load only when online — fail gracefully offline. No data leaves your phone.</Text>
       </View>
     </View>
   );
 }
 
-function JailTab({ apps, jailed, setJailed, onAddApp, onRemoveApp }: any) {
+function JailTab({ apps, jailed, setJailed, onAddApp, onRemoveApp, theme, isDark }: any) {
   const [newName, setNewName] = useState("");
   const [newPkg, setNewPkg] = useState("");
   const [newLimit, setNewLimit] = useState("30");
   return (
     <View style={{ padding: 16, gap: 16 }}>
-      <Text style={styles.sectionTitle}>Jail Control</Text>
-      <Text style={styles.sectionSub}>Tap any app to test jail door • Long-press custom app to remove</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>Jail Control</Text>
+      <Text style={[styles.sectionSub, { color: theme.muted }]}>Tap any app to test jail door • Long-press custom app to remove</Text>
 
       <View style={styles.jailList}>
         {Object.keys(apps).map((id) => (
@@ -656,48 +768,48 @@ function JailTab({ apps, jailed, setJailed, onAddApp, onRemoveApp }: any) {
             key={id}
             onPress={() => setJailed(id)}
             onLongPress={() => onRemoveApp(id)}
-            style={styles.jailRow}
+            style={[styles.jailRow, { backgroundColor: theme.card, borderColor: theme.border }]}
           >
             <View style={[styles.jailIcon, { backgroundColor: apps[id].color + "14" }]}>
               <Text style={{ color: apps[id].color, fontWeight: "800" }}>{apps[id].icon}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.jailName}>{apps[id].name}</Text>
-              <Text style={styles.monoSmall}>Limit {apps[id].limit}m • Tap to jail {DEFAULT_APPS[id] ? "" : "• long-press to remove"}</Text>
+              <Text style={[styles.jailName, { color: theme.text }]}>{apps[id].name}</Text>
+              <Text style={[styles.monoSmall, { color: theme.muted }]}>Limit {apps[id].limit}m • Tap to jail {DEFAULT_APPS[id] ? "" : "• long-press to remove"}</Text>
             </View>
-            <View style={styles.jailBadge}>
-              <Text style={styles.jailBadgeTxt}>JAIL →</Text>
+            <View style={[styles.jailBadge, { backgroundColor: theme.card2, borderColor: theme.border }]}>
+              <Text style={[styles.jailBadgeTxt, { color: theme.text }]}>JAIL →</Text>
             </View>
           </TouchableOpacity>
         ))}
       </View>
 
-      <View style={{ backgroundColor: "#0F1320", borderWidth: 1, borderColor: "#1A1F2E", borderRadius: 14, padding: 14, gap: 10 }}>
-        <Text style={styles.sectionTitle}>Add Custom App</Text>
-        <Text style={styles.sectionSub}>Add any app you want to jail — limit in minutes</Text>
+      <View style={{ backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border, borderRadius: 14, padding: 14, gap: 10 }}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Add Custom App</Text>
+        <Text style={[styles.sectionSub, { color: theme.muted }]}>Add any app you want to jail — limit in minutes</Text>
         <TextInput
           value={newName}
           onChangeText={setNewName}
           placeholder="App name (e.g. TikTok)"
-          placeholderTextColor="#5A6378"
-          style={[styles.input, { marginTop: 0 }]}
+          placeholderTextColor={theme.subtle}
+          style={[styles.input, { marginTop: 0, backgroundColor: theme.card2, borderColor: theme.border, color: theme.text }]}
         />
         <TextInput
           value={newPkg}
           onChangeText={setNewPkg}
           placeholder="Package (e.g. com.zhiliaoapp.musically)"
-          placeholderTextColor="#5A6378"
+          placeholderTextColor={theme.subtle}
           autoCapitalize="none"
-          style={[styles.input, { marginTop: 0 }]}
+          style={[styles.input, { marginTop: 0, backgroundColor: theme.card2, borderColor: theme.border, color: theme.text }]}
         />
         <View style={{ flexDirection: "row", gap: 8 }}>
           <TextInput
             value={newLimit}
             onChangeText={setNewLimit}
             placeholder="30"
-            placeholderTextColor="#5A6378"
+            placeholderTextColor={theme.subtle}
             keyboardType="number-pad"
-            style={[styles.input, { flex: 1, marginTop: 0, textAlign: "center" }]}
+            style={[styles.input, { flex: 1, marginTop: 0, textAlign: "center", backgroundColor: theme.card2, borderColor: theme.border, color: theme.text }]}
           />
           <TouchableOpacity
             onPress={() => {
@@ -718,7 +830,7 @@ function JailTab({ apps, jailed, setJailed, onAddApp, onRemoveApp }: any) {
   );
 }
 
-function VaultTab({ pomodoro, setPomodoro, pomRunning, setPomRunning }: any) {
+function VaultTab({ pomodoro, setPomodoro, pomRunning, setPomRunning, theme, isDark }: any) {
   const mins = Math.floor(pomodoro / 60)
     .toString()
     .padStart(2, "0");
@@ -771,7 +883,7 @@ function VaultTab({ pomodoro, setPomodoro, pomRunning, setPomRunning }: any) {
   );
 }
 
-function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, onSignOut, onClear }: any) {
+function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, theme, isDark, onSignOut, onClear }: any) {
   const days: number[] = heatmap || Array.from({ length: 90 }, () => 0);
   const level = Math.floor(streak / 3) + 1;
   return (
