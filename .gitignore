@@ -1,0 +1,10 @@
+node_modules
+.expo
+dist
+.expo-shared
+android
+ios
+*.log
+.DS_Store
+.env
+pc-api-key.json
