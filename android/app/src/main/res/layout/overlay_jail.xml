@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#06080F"
+    android:padding="32dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="▦"
+        android:textSize="48sp"
+        android:textColor="#EF4444"
+        android:gravity="center" />
+
+    <TextView
+        android:id="@+id/overlay_app_name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="App is in jail."
+        android:textSize="20sp"
+        android:textColor="#FFFFFF"
+        android:gravity="center"
+        android:paddingTop="16dp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="You hit your limit. Open DON'T to break out."
+        android:textSize="12sp"
+        android:textColor="#AAB2D6"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:paddingBottom="24dp" />
+
+    <Button
+        android:id="@+id/overlay_btn_open"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Open DON'T → Unlock"
+        android:textColor="#06080F"
+        android:backgroundTint="#FFFFFF"
+        android:layout_marginBottom="12dp" />
+
+    <Button
+        android:id="@+id/overlay_btn_close"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Dismiss (5s)"
+        android:textColor="#8B93B8"
+        android:backgroundTint="#0F1320" />
+
+</LinearLayout>

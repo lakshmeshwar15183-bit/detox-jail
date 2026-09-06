@@ -8,6 +8,8 @@ import {
   StyleSheet,
   Animated,
   Platform,
+  Alert,
+  TextInput,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,19 +25,23 @@ import {
   IBMPlexMono_500Medium,
 } from "@expo-google-fonts/ibm-plex-mono";
 import * as SplashScreen from "expo-splash-screen";
+import * as IntentLauncher from "expo-intent-launcher";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import AuthScreen from "./src/auth/AuthScreen";
 import { getUser, guestDaysLeft, signOut, User } from "./src/auth/auth";
 import { load as loadStore, save as saveStore, markToday } from "./src/store/useStore";
+import { getForegroundApp, getAppUsage, showOverlay, hideOverlay, canDrawOverlays } from "./src/native/jail";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// --- MOCK STORE (offline-first, AsyncStorage-ready) ---
-type AppId = "instagram" | "youtube" | "reddit" | "twitter";
-const APPS: Record<AppId, { name: string; icon: string; color: string; limit: number }> = {
-  instagram: { name: "Instagram", icon: "◈", color: "#E1306C", limit: 30 },
-  youtube: { name: "YouTube", icon: "▶", color: "#FF0000", limit: 45 },
-  reddit: { name: "Reddit", icon: "⬢", color: "#FF4500", limit: 20 },
-  twitter: { name: "X", icon: "✕", color: "#1DA1F2", limit: 20 },
+// --- APPS (dynamic, persisted) ---
+type AppId = string;
+type AppConfig = { name: string; icon: string; color: string; limit: number; packageName?: string };
+const DEFAULT_APPS: Record<string, AppConfig> = {
+  instagram: { name: "Instagram", icon: "◈", color: "#E1306C", limit: 30, packageName: "com.instagram.android" },
+  youtube: { name: "YouTube", icon: "▶", color: "#FF0000", limit: 45, packageName: "com.google.android.youtube" },
+  reddit: { name: "Reddit", icon: "⬢", color: "#FF4500", limit: 20, packageName: "com.reddit.frontpage" },
+  twitter: { name: "X", icon: "✕", color: "#1DA1F2", limit: 20, packageName: "com.twitter.android" },
 };
 
 // --- ADS MOCK (toggle to real IDs) ---
@@ -75,6 +81,10 @@ export default function App() {
   const [pomodoro, setPomodoro] = useState(25 * 60);
   const [pomRunning, setPomRunning] = useState(false);
   const [adWatchCount, setAdWatchCount] = useState(0);
+  const [hasUsagePermission, setHasUsagePermission] = useState<boolean | null>(null);
+  const [hasOverlayPermission, setHasOverlayPermission] = useState<boolean | null>(null);
+  const [appsConfig, setAppsConfig] = useState<Record<string, AppConfig>>(DEFAULT_APPS);
+  const allApps = appsConfig;
   const vaultAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -83,19 +93,51 @@ export default function App() {
       setUser(u);
       // load real persisted stats (starts at 0, no mock)
       try {
-        const cfg = await loadStore();
+        // load custom apps first
+      const customRaw = await AsyncStorage.getItem("dont_custom_apps");
+      let merged: Record<string, AppConfig> = { ...DEFAULT_APPS };
+      if (customRaw) {
+        try {
+          const parsed = JSON.parse(customRaw) as Record<string, AppConfig>;
+          merged = { ...DEFAULT_APPS, ...parsed };
+          setAppsConfig(merged);
+        } catch {}
+      }
+      const cfg = await loadStore();
         if (cfg) {
           setStreak(cfg.streak);
           setTimeSaved(cfg.timeSavedMin);
-          const m: Record<AppId, number> = { instagram: 0, youtube: 0, reddit: 0, twitter: 0 };
-          (Object.keys(cfg.apps) as AppId[]).forEach((k) => {
-            if (m[k as AppId] !== undefined) m[k as AppId] = cfg.apps[k].usedMin;
+          const m: Record<string, number> = {};
+          Object.keys(merged).forEach((k) => (m[k] = 0));
+          Object.keys(cfg.apps).forEach((k) => {
+            if (m[k] !== undefined) m[k] = cfg.apps[k].usedMin;
+            else {
+              // custom app not in merged yet (old cfg)
+              merged[k] = { name: k, icon: "⬢", color: "#8B93B8", limit: cfg.apps[k].limitMin };
+              m[k] = cfg.apps[k].usedMin;
+            }
           });
-          setUsage(m);
+          setUsage(m as Record<AppId, number>);
+          if (Object.keys(cfg.apps).some((k) => !DEFAULT_APPS[k])) setAppsConfig({ ...merged });
           setAdWatchCount(cfg.adWatchCount || 0);
           if (cfg.heatmap?.length === 90) setHeatmap(cfg.heatmap);
+        } else {
+          const m: Record<string, number> = {};
+          Object.keys(merged).forEach((k) => (m[k] = 0));
+          setUsage(m as any);
         }
-      } catch {}
+        const perm = await AsyncStorage.getItem("dont_usage_permission");
+        setHasUsagePermission(perm === "granted");
+        try {
+          const canOverlay = await canDrawOverlays();
+          setHasOverlayPermission(canOverlay);
+        } catch {
+          setHasOverlayPermission(false);
+        }
+      } catch {
+        setHasUsagePermission(false);
+        setHasOverlayPermission(false);
+      }
       setAuthLoading(false);
       if (u) {
         const onboard = await import("@react-native-async-storage/async-storage").then((m) => m.default.getItem("dont_onboarded"));
@@ -126,7 +168,7 @@ export default function App() {
     if (authLoading) return;
     const cfg = {
       apps: Object.fromEntries(
-        (Object.keys(APPS) as AppId[]).map((k) => [k, { limitMin: APPS[k].limit, usedMin: usage[k] || 0, jailed: jailed === k }])
+        Object.keys(allApps).map((k) => [k, { limitMin: allApps[k].limit, usedMin: usage[k] || 0, jailed: jailed === k }])
       ) as any,
       streak,
       timeSavedMin: timeSaved,
@@ -135,7 +177,110 @@ export default function App() {
       heatmap,
     };
     saveStore(cfg as any);
-  }, [usage, streak, timeSaved, adWatchCount, heatmap, jailed, authLoading]);
+  }, [usage, streak, timeSaved, adWatchCount, heatmap, jailed, authLoading, allApps]);
+
+  useEffect(() => {
+    if (authLoading) return;
+    const toSave: Record<string, AppConfig> = {};
+    Object.keys(appsConfig).forEach((k) => {
+      if (!DEFAULT_APPS[k]) toSave[k] = appsConfig[k];
+    });
+    AsyncStorage.setItem("dont_custom_apps", JSON.stringify(toSave));
+  }, [appsConfig, authLoading]);
+
+  const addCustomApp = (name: string, packageName: string, limit: number) => {
+    if (!name.trim()) return;
+    const id = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_") + "_" + Date.now().toString().slice(-4);
+    const colors = ["#E1306C","#FF0000","#FF4500","#1DA1F2","#22C55E","#8B5CF6","#F59E0B","#06B6D4"];
+    const color = colors[Object.keys(appsConfig).length % colors.length];
+    const icon = name.trim()[0]?.toUpperCase() || "⬢";
+    const pkg = packageName.trim() || "com.example." + id;
+    setAppsConfig((prev) => ({ ...prev, [id]: { name: name.trim(), icon, color, limit: Math.max(5, Math.min(240, limit || 30)), packageName: pkg } }));
+    setUsage((prev) => ({ ...prev, [id]: 0 }));
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+  const removeCustomApp = (id: string) => {
+    if (DEFAULT_APPS[id]) {
+      Alert.alert("Can't remove", "Default apps can't be removed — you can change their limit in a future update.");
+      return;
+    }
+    Alert.alert("Remove app?", `Remove ${appsConfig[id]?.name || id}?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          setAppsConfig((prev) => {
+            const n = { ...prev };
+            delete n[id];
+            return n;
+          });
+          setUsage((prev) => {
+            const n = { ...prev };
+            delete n[id];
+            return n;
+          });
+          if (jailed === id) setJailed(null);
+        },
+      },
+    ]);
+  };
+
+  // REAL jail polling — replaces mock tick, uses UsageStats + overlay
+  useEffect(() => {
+    if (hasUsagePermission !== true) return;
+    if (authLoading) return;
+    let mounted = true;
+    const poll = async () => {
+      try {
+        const updates: Record<string, number> = {};
+        for (const id of Object.keys(allApps)) {
+          const pkg = (allApps as any)[id].packageName;
+          if (!pkg) continue;
+          const mins = await getAppUsage(pkg);
+          updates[id] = Math.floor(mins);
+        }
+        if (!mounted) return;
+        setUsage((prev) => {
+          let changed = false;
+          const next = { ...prev } as Record<string, number>;
+          for (const k of Object.keys(updates)) {
+            if (next[k] !== updates[k]) {
+              next[k] = updates[k];
+              changed = true;
+            }
+          }
+          return changed ? (next as any) : prev;
+        });
+        const fg = await getForegroundApp();
+        if (!fg || !mounted) return;
+        for (const [id, cfg] of Object.entries(allApps as Record<string, AppConfig>)) {
+          if (fg === cfg.packageName) {
+            const used = updates[id] ?? 0;
+            if (used >= cfg.limit && jailed !== id) {
+              const canOverlay = hasOverlayPermission ?? (await canDrawOverlays());
+              if (!canOverlay) {
+                setJailed(id as any);
+              } else {
+                try {
+                  await showOverlay(cfg.name);
+                } catch {}
+                setJailed(id as any);
+              }
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              break;
+            }
+          }
+        }
+      } catch {}
+    };
+    poll();
+    const t = setInterval(poll, 2500);
+    return () => {
+      mounted = false;
+      clearInterval(t);
+    };
+  }, [hasUsagePermission, hasOverlayPermission, allApps, jailed, authLoading]);
 
   if (!fontsLoaded || authLoading) return <View style={{ flex: 1, backgroundColor: "#06080F" }} />;
 
@@ -179,24 +324,86 @@ export default function App() {
             </View>
           </View>
           {user?.isGuest && (
-            <View style={{ marginHorizontal: 16, marginTop: 8, backgroundColor: "#1A1400", borderWidth: 1, borderColor: "#854D0E", borderRadius: 10, padding: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={{ color: "#FDE68A", fontSize: 11, fontWeight: "700" }}>Guest trial: {guestDaysLeft(user)} days left → Sign in with email to keep streak</Text>
+            <View style={{ marginHorizontal: 16, marginTop: 8, backgroundColor: "#1A1400", borderWidth: 1, borderColor: "#854D0E", borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <Text style={{ flex: 1, color: "#FDE68A", fontSize: 11, fontWeight: "700", flexShrink: 1 }}>Guest trial: {guestDaysLeft(user)} days left • Sign in to keep streak</Text>
               <TouchableOpacity
                 onPress={async () => {
                   await signOut();
                   setUser(null);
                   setOnboarded(false);
                 }}
-                style={{ backgroundColor: "#854D0E", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}
+                style={{ backgroundColor: "#854D0E", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, flexShrink: 0 }}
               >
-                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "800" }}>Sign In</Text>
+                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800" }}>Sign In →</Text>
               </TouchableOpacity>
+            </View>
+          )}
+          {hasUsagePermission === false && (
+            <View style={{ marginHorizontal: 16, marginTop: 8, backgroundColor: "#1A0F0F", borderWidth: 1, borderColor: "#7F1D1D", borderRadius: 12, padding: 14, gap: 10 }}>
+              <Text style={{ color: "#FECACA", fontWeight: "800", fontSize: 13 }}>⚠ Usage Access needed to track apps</Text>
+              <Text style={{ color: "#AAB2D6", fontSize: 11, lineHeight: 16 }}>DON'T needs Usage Access to see time in Instagram / YouTube etc. Go to Settings → Usage Access → enable DON'T. Without it, jail won't auto-trigger — you can still jail manually.</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      if (Platform.OS === "android") await IntentLauncher.startActivityAsync("android.settings.USAGE_ACCESS_SETTINGS");
+                    } catch {}
+                  }}
+                  style={{ flex: 1, backgroundColor: "#EF4444", padding: 12, borderRadius: 10, alignItems: "center" }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Open Settings → Enable</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    await AsyncStorage.setItem("dont_usage_permission", "granted");
+                    setHasUsagePermission(true);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }}
+                  style={{ backgroundColor: "#0F1320", borderWidth: 1, borderColor: "#1A1F2E", padding: 12, borderRadius: 10, alignItems: "center" }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>I've Allowed ✓</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={{ color: "#5A6378", fontSize: 10, textAlign: "center" }}>You can revoke anytime. 100% offline, no data leaves device.</Text>
+            </View>
+          )}
+          {hasOverlayPermission === false && (
+            <View style={{ marginHorizontal: 16, marginTop: 8, backgroundColor: "#1A1400", borderWidth: 1, borderColor: "#854D0E", borderRadius: 12, padding: 14, gap: 10 }}>
+              <Text style={{ color: "#FDE68A", fontWeight: "800", fontSize: 13 }}>⛶ Display over other apps needed</Text>
+              <Text style={{ color: "#AAB2D6", fontSize: 11, lineHeight: 16 }}>To show jail door on top of Instagram / YouTube, DON'T needs "Display over other apps". Enable it so jail actually blocks.</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      const { requestOverlayPermission } = await import("./src/native/jail");
+                      await requestOverlayPermission();
+                    } catch {}
+                  }}
+                  style={{ flex: 1, backgroundColor: "#854D0E", padding: 12, borderRadius: 10, alignItems: "center" }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "800", fontSize: 12 }}>Open Settings → Allow</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    try {
+                      const { canDrawOverlays } = await import("./src/native/jail");
+                      const ok = await canDrawOverlays();
+                      setHasOverlayPermission(ok);
+                      if (ok) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    } catch {}
+                  }}
+                  style={{ backgroundColor: "#0F1320", borderWidth: 1, borderColor: "#1A1F2E", padding: 12, borderRadius: 10, alignItems: "center" }}
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 12 }}>I've Allowed ✓</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
           <ScrollView contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
             {tab === "today" && (
               <HomeTab
+                apps={allApps}
                 usage={usage}
                 jailed={jailed}
                 setJailed={setJailed}
@@ -206,12 +413,15 @@ export default function App() {
             )}
             {tab === "jail" && (
               <JailTab
+                apps={allApps}
                 jailed={jailed}
                 setJailed={setJailed}
                 setUsage={setUsage}
                 setTimeSaved={setTimeSaved}
                 setAdWatchCount={setAdWatchCount}
                 adWatchCount={adWatchCount}
+                onAddApp={addCustomApp}
+                onRemoveApp={removeCustomApp}
               />
             )}
             {tab === "vault" && (
@@ -268,9 +478,8 @@ export default function App() {
                 </TouchableOpacity>
               ))}
             </View>
-            {/* BANNER AD MOCK */}
             <View style={styles.bannerAd}>
-              <Text style={styles.bannerTxt}>AdMob Banner — 320×50 • Adaptive • Offline hides</Text>
+              <Text style={styles.bannerTxt}>Support DON'T • Ads keep it free</Text>
               <View style={styles.bannerAdInner}>
                 <Text style={styles.bannerAdLabel}>DON'T Pro — Remove ads ₹99</Text>
               </View>
@@ -278,7 +487,8 @@ export default function App() {
           </View>
 
           {/* JAIL OVERLAY — full screen sophisticated */}
-          {jailed && <JailOverlay appId={jailed} onClose={() => setJailed(null)} onUnlock={(via) => {
+          {jailed && <JailOverlay apps={allApps} appId={jailed} onClose={() => { hideOverlay().catch(() => {}); setJailed(null); }} onUnlock={(via) => {
+            hideOverlay().catch(() => {});
             if (via === "ad") setAdWatchCount(c => c + 1);
             setUsage(u => ({ ...u, [jailed!]: 0 }));
             setTimeSaved(s => s + 18);
@@ -353,7 +563,7 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   );
 }
 
-function HomeTab({ usage, jailed, setJailed, setTab, timeSaved }: any) {
+function HomeTab({ apps, usage, jailed, setJailed, setTab, timeSaved }: any) {
   return (
     <View style={{ padding: 16, gap: 14 }}>
       {/* HERO — time saved */}
@@ -381,9 +591,9 @@ function HomeTab({ usage, jailed, setJailed, setTab, timeSaved }: any) {
       </View>
 
       <View style={styles.appGrid}>
-        {(Object.keys(APPS) as AppId[]).map((id) => {
-          const app = APPS[id];
-          const used = usage[id];
+        {(Object.keys(apps) as string[]).map((id) => {
+          const app = apps[id];
+          const used = usage[id] || 0;
           const pct = Math.min(100, (used / app.limit) * 100);
           const isJailed = jailed === id || pct >= 100;
           return (
@@ -431,25 +641,29 @@ function HomeTab({ usage, jailed, setJailed, setTab, timeSaved }: any) {
   );
 }
 
-function JailTab({ jailed, setJailed, setUsage, setTimeSaved, setAdWatchCount, adWatchCount }: any) {
+function JailTab({ apps, jailed, setJailed, onAddApp, onRemoveApp }: any) {
+  const [newName, setNewName] = useState("");
+  const [newPkg, setNewPkg] = useState("");
+  const [newLimit, setNewLimit] = useState("30");
   return (
     <View style={{ padding: 16, gap: 16 }}>
       <Text style={styles.sectionTitle}>Jail Control</Text>
-      <Text style={styles.sectionSub}>Tap any app to test jail door • AdMob interstitial after unlock (capped 1/5m)</Text>
+      <Text style={styles.sectionSub}>Tap any app to test jail door • Long-press custom app to remove</Text>
 
       <View style={styles.jailList}>
-        {(Object.keys(APPS) as AppId[]).map((id) => (
+        {Object.keys(apps).map((id) => (
           <TouchableOpacity
             key={id}
             onPress={() => setJailed(id)}
+            onLongPress={() => onRemoveApp(id)}
             style={styles.jailRow}
           >
-            <View style={[styles.jailIcon, { backgroundColor: APPS[id].color + "14" }]}>
-              <Text style={{ color: APPS[id].color, fontWeight: "800" }}>{APPS[id].icon}</Text>
+            <View style={[styles.jailIcon, { backgroundColor: apps[id].color + "14" }]}>
+              <Text style={{ color: apps[id].color, fontWeight: "800" }}>{apps[id].icon}</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.jailName}>{APPS[id].name}</Text>
-              <Text style={styles.monoSmall}>Limit {APPS[id].limit}m • Tap to jail</Text>
+              <Text style={styles.jailName}>{apps[id].name}</Text>
+              <Text style={styles.monoSmall}>Limit {apps[id].limit}m • Tap to jail {DEFAULT_APPS[id] ? "" : "• long-press to remove"}</Text>
             </View>
             <View style={styles.jailBadge}>
               <Text style={styles.jailBadgeTxt}>JAIL →</Text>
@@ -458,23 +672,47 @@ function JailTab({ jailed, setJailed, setUsage, setTimeSaved, setAdWatchCount, a
         ))}
       </View>
 
-      <View style={styles.statsCard}>
-        <Text style={styles.statsTitle}>Ad Returns (mock)</Text>
-        <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>{adWatchCount}</Text>
-            <Text style={styles.monoSmall}>Rewarded</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>~${(adWatchCount * 0.012).toFixed(2)}</Text>
-            <Text style={styles.monoSmall}>Est. today</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNum}>2.4k</Text>
-            <Text style={styles.monoSmall}>Impressions</Text>
-          </View>
+      <View style={{ backgroundColor: "#0F1320", borderWidth: 1, borderColor: "#1A1F2E", borderRadius: 14, padding: 14, gap: 10 }}>
+        <Text style={styles.sectionTitle}>Add Custom App</Text>
+        <Text style={styles.sectionSub}>Add any app you want to jail — limit in minutes</Text>
+        <TextInput
+          value={newName}
+          onChangeText={setNewName}
+          placeholder="App name (e.g. TikTok)"
+          placeholderTextColor="#5A6378"
+          style={[styles.input, { marginTop: 0 }]}
+        />
+        <TextInput
+          value={newPkg}
+          onChangeText={setNewPkg}
+          placeholder="Package (e.g. com.zhiliaoapp.musically)"
+          placeholderTextColor="#5A6378"
+          autoCapitalize="none"
+          style={[styles.input, { marginTop: 0 }]}
+        />
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput
+            value={newLimit}
+            onChangeText={setNewLimit}
+            placeholder="30"
+            placeholderTextColor="#5A6378"
+            keyboardType="number-pad"
+            style={[styles.input, { flex: 1, marginTop: 0, textAlign: "center" }]}
+          />
+          <TouchableOpacity
+            onPress={() => {
+              const limit = parseInt(newLimit, 10) || 30;
+              onAddApp(newName, newPkg, limit);
+              setNewName("");
+              setNewPkg("");
+              setNewLimit("30");
+            }}
+            style={{ flex: 1, backgroundColor: "#fff", padding: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" }}
+          >
+            <Text style={{ color: "#06080F", fontWeight: "800", fontSize: 12 }}>+ Add App</Text>
+          </TouchableOpacity>
         </View>
-        <Text style={styles.monoSmallCenter}>Banner + Interstitial + Rewarded = full returns • No AI cost</Text>
+        <Text style={styles.monoSmallCenter}>Custom apps saved offline • appears on Today & Jail instantly</Text>
       </View>
     </View>
   );
@@ -526,8 +764,8 @@ function VaultTab({ pomodoro, setPomodoro, pomRunning, setPomRunning }: any) {
       </View>
 
       <View style={styles.noteCard}>
-        <Text style={styles.noteTitle}>AdMob here → Interstitial</Text>
-        <Text style={styles.noteDesc}>After vault completes, show interstitial (capped). Rewarded to extend vault +10m.</Text>
+        <Text style={styles.noteTitle}>Stay focused → vault complete</Text>
+        <Text style={styles.noteDesc}>After vault, a short ad supports the app. Rewarded option extends vault +10m. Offline works without ads.</Text>
       </View>
     </View>
   );
@@ -583,24 +821,10 @@ function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, onSignOut, onC
         </View>
       </View>
 
-      <View style={styles.settingsCard}>
-        <Text style={styles.settingsTitle}>Monetization — Your Returns</Text>
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Banner (Home/Stats)</Text>
-          <Text style={styles.settingVal}>$0.7 eCPM • Always</Text>
-        </View>
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Interstitial (after unlock)</Text>
-          <Text style={styles.settingVal}>$2.2 eCPM • 1/5m cap</Text>
-        </View>
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Rewarded (unlock 15m)</Text>
-          <Text style={styles.settingValActive}>$8.4 eCPM • Unlimited</Text>
-        </View>
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>Remove Ads IAP</Text>
-          <Text style={styles.settingVal}>₹99 • 4% convert</Text>
-        </View>
+      <View style={{ backgroundColor: "#0F1320", borderWidth: 1, borderColor: "#1A1F2E", borderRadius: 12, padding: 12, gap: 8 }}>
+        <Text style={styles.settingsTitle}>About DON'T</Text>
+        <Text style={{ color: "#AAB2D6", fontSize: 11, lineHeight: 16 }}>Your apps go to jail so you can go free. 100% offline, no tracking, no data leaves your phone. Grant Usage Access to enable auto-jailing. Add any app via Jail tab.</Text>
+        <Text style={{ color: "#5A6378", fontSize: 10 }}>v1.0.0 • com.dont.jail • Made for focus</Text>
       </View>
 
       <TouchableOpacity onPress={onClear} style={{ backgroundColor: "#1A0F0F", borderWidth: 1, borderColor: "#7F1D1D", borderRadius: 12, padding: 12, alignItems: "center" }}>
@@ -613,7 +837,7 @@ function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, onSignOut, onC
   );
 }
 
-function JailOverlay({ appId, onClose, onUnlock }: { appId: AppId; onClose: () => void; onUnlock: (via: "task" | "ad") => void }) {
+function JailOverlay({ apps, appId, onClose, onUnlock }: { apps: Record<string, AppConfig>; appId: AppId; onClose: () => void; onUnlock: (via: "task" | "ad") => void }) {
   const [mode, setMode] = useState<"choose" | "ad" | "task">("choose");
   const [adProgress, setAdProgress] = useState(0);
   const scale = useRef(new Animated.Value(0.9)).current;
@@ -627,7 +851,7 @@ function JailOverlay({ appId, onClose, onUnlock }: { appId: AppId; onClose: () =
     }
   }, [mode]);
 
-  const app = APPS[appId];
+  const app = apps[appId] || { name: appId, limit: 30, icon: "⬢", color: "#8B93B8" };
 
   return (
     <View style={styles.overlay}>
@@ -685,8 +909,8 @@ function JailOverlay({ appId, onClose, onUnlock }: { appId: AppId; onClose: () =
                 <Text style={[styles.breakIcon, { color: "#60A5FA" }]}>▶</Text>
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.breakTitle}>Watch Rewarded Ad (15m unlock)</Text>
-                <Text style={styles.breakDesc}>~20s • Supports us • Highest AdMob eCPM • Full returns</Text>
+                <Text style={styles.breakTitle}>Watch Ad (15m unlock)</Text>
+                <Text style={styles.breakDesc}>~20s • Supports DON'T to stay free • Offline still works via Tasks</Text>
               </View>
               <View style={styles.adBadge}>
                 <Text style={styles.adBadgeTxt}>$ • REWARDED</Text>
@@ -695,7 +919,7 @@ function JailOverlay({ appId, onClose, onUnlock }: { appId: AppId; onClose: () =
 
             <Text style={styles.monoSmallCenter}>Interstitial will show after unlock (capped 1/5m) • Banner below</Text>
             <View style={styles.miniBanner}>
-              <Text style={styles.miniBannerTxt}>AdMob Banner • 320×50 • Offline hidden</Text>
+              <Text style={styles.miniBannerTxt}>Support banner • Offline hidden • Remove with Pro</Text>
             </View>
           </View>
         )}
@@ -768,6 +992,7 @@ const styles = StyleSheet.create({
   dotLine: { height: 4, width: 24, borderRadius: 2, backgroundColor: "#1A1F2E" },
   primaryBtn: { backgroundColor: "#fff", paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12 },
   primaryBtnTxt: { color: "#06080F", fontWeight: "800", fontSize: 13 },
+  input: { backgroundColor: "#0A0D18", borderWidth: 1, borderColor: "#1A1F2E", borderRadius: 10, padding: 14, color: "#fff", fontSize: 15 },
   // home
   hero: { borderRadius: 16, borderWidth: 1, borderColor: "#1A1F2E", padding: 16, gap: 14 },
   heroTitle: { fontFamily: "SpaceGrotesk_700Bold", fontSize: 28, color: "#fff", marginTop: 6 },
