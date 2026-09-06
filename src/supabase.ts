@@ -5,7 +5,7 @@ import { Platform } from "react-native";
 
 const extra = Constants.expoConfig?.extra ?? {};
 
-// For DETØX we reuse your existing Supabase project (0 cost).
+// For DON'T we reuse your existing Supabase project (0 cost).
 // Create a new project if you want isolation: set EXPO_PUBLIC_SUPABASE_URL/ANON_KEY in .env
 export const supabaseUrl =
   (extra.supabaseUrl as string) ||

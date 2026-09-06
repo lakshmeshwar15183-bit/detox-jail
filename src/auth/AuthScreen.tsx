@@ -2,37 +2,36 @@ import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { sendEmailOtp, signInWithEmail, signInAsGuest } from "./auth";
+import { signUp, signIn, resetPassword, signInAsGuest } from "./auth";
 
 export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
-  const [step, setStep] = useState<"email" | "otp">("email");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const sendOtp = async () => {
+  const handleAuth = async () => {
     if (!email.includes("@")) return Alert.alert("Enter valid email");
+    if (mode !== "forgot" && password.length < 6) return Alert.alert("Password 6+ chars");
+    if (mode === "signup" && password !== confirm) return Alert.alert("Passwords don't match");
     setLoading(true);
     try {
-      await sendEmailOtp(email);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setStep("otp");
-      Alert.alert("OTP sent", `Code sent to ${email.trim().toLowerCase()} via Supabase. Check inbox (and spam). Demo fallback: 123456 works offline.`);
+      if (mode === "signup") {
+        await signUp(email, password);
+        Alert.alert("Account created", "You can now login. Check email if confirmation required.");
+        setMode("login");
+      } else if (mode === "login") {
+        await signIn(email, password);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onAuthed();
+      } else if (mode === "forgot") {
+        await resetPassword(email);
+        Alert.alert("Reset sent", "Check your email for reset link.");
+        setMode("login");
+      }
     } catch (e: any) {
-      Alert.alert("Could not send OTP", e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const verify = async () => {
-    try {
-      setLoading(true);
-      await signInWithEmail(email, otp);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onAuthed();
-    } catch (e: any) {
-      Alert.alert("Auth failed", e.message);
+      Alert.alert(mode === "signup" ? "Sign up failed" : mode === "login" ? "Login failed" : "Reset failed", e.message);
     } finally {
       setLoading(false);
     }
@@ -55,50 +54,49 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
     <View style={styles.root}>
       <LinearGradient colors={["#06080F", "#0A0E1A"]} style={StyleSheet.absoluteFill} />
       <View style={styles.card}>
-        <Text style={styles.mono}>DETØX • AUTH • SUPABASE + GUEST 3D</Text>
-        <Text style={styles.title}>Welcome to DETØX</Text>
-        <Text style={styles.sub}>Your apps go to jail so you can go free. Email = permanent. Guest = 3 days free, then sign in.</Text>
+        <Text style={styles.mono}>DETØX • REAL AUTH • SUPABASE</Text>
+        <Text style={styles.title}>{mode === "signup" ? "Create account" : mode === "forgot" ? "Reset password" : "Welcome back"}</Text>
+        <Text style={styles.sub}>Email + password • Secure • Guest 3 days free → then account required.</Text>
 
         <View style={styles.divider} />
 
-        {step === "email" ? (
+        <Text style={styles.label}>Email</Text>
+        <TextInput value={email} onChangeText={setEmail} placeholder="you@example.com" placeholderTextColor="#5A6378" autoCapitalize="none" keyboardType="email-address" style={styles.input} />
+
+        {mode !== "forgot" && (
           <>
-            <Text style={styles.label}>Email (Supabase OTP)</Text>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@example.com"
-              placeholderTextColor="#5A6378"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              style={styles.input}
-            />
-            <TouchableOpacity onPress={sendOtp} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
-              {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>Send OTP →</Text>}
-            </TouchableOpacity>
-            <Text style={styles.hint}>We send 6-digit code via Supabase. Real email, $0 on free tier.</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.label}>OTP for {email.trim().toLowerCase()}</Text>
-            <TextInput
-              value={otp}
-              onChangeText={setOtp}
-              placeholder="123456"
-              placeholderTextColor="#5A6378"
-              keyboardType="number-pad"
-              maxLength={6}
-              style={[styles.input, { letterSpacing: 8, fontSize: 20, textAlign: "center" }]}
-            />
-            <TouchableOpacity onPress={verify} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
-              {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>Verify & Enter →</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setStep("email")} style={styles.linkBtn}>
-              <Text style={styles.linkTxt}>← Change email / Resend</Text>
-            </TouchableOpacity>
-            <Text style={styles.hint}>Demo offline: 123456 / 000000 always works.</Text>
+            <Text style={styles.label}>Password</Text>
+            <TextInput value={password} onChangeText={setPassword} placeholder="••••••••" placeholderTextColor="#5A6378" secureTextEntry style={styles.input} />
           </>
         )}
+        {mode === "signup" && (
+          <>
+            <Text style={styles.label}>Confirm Password</Text>
+            <TextInput value={confirm} onChangeText={setConfirm} placeholder="••••••••" placeholderTextColor="#5A6378" secureTextEntry style={styles.input} />
+          </>
+        )}
+
+        <TouchableOpacity onPress={handleAuth} disabled={loading} style={[styles.primary, loading && { opacity: 0.6 }]}>
+          {loading ? <ActivityIndicator color="#06080F" /> : <Text style={styles.primaryTxt}>{mode === "signup" ? "Create Account →" : mode === "forgot" ? "Send Reset Link →" : "Login →"}</Text>}
+        </TouchableOpacity>
+
+        <View style={styles.row}>
+          {mode !== "login" && (
+            <TouchableOpacity onPress={() => setMode("login")}>
+              <Text style={styles.link}>Login</Text>
+            </TouchableOpacity>
+          )}
+          {mode !== "signup" && (
+            <TouchableOpacity onPress={() => setMode("signup")}>
+              <Text style={styles.link}>Create account</Text>
+            </TouchableOpacity>
+          )}
+          {mode !== "forgot" && (
+            <TouchableOpacity onPress={() => setMode("forgot")}>
+              <Text style={styles.link}>Forgot password?</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         <View style={styles.orRow}>
           <View style={styles.orLine} />
@@ -110,13 +108,12 @@ export default function AuthScreen({ onAuthed }: { onAuthed: () => void }) {
           <Text style={styles.guestIcon}>⬢</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.guestTitle}>Continue as Guest — 3 days free</Text>
-            <Text style={styles.guestSub}>No email. Full app. Expires in 3 days → then email required.</Text>
+            <Text style={styles.guestSub}>No email. Expires in 3 days → create account to keep streak.</Text>
           </View>
           <Text style={styles.guestArrow}>→</Text>
         </TouchableOpacity>
 
-        <Text style={styles.foot}>Supabase Auth • SecureStore • Offline guest • com.detox.jail</Text>
-        <Text style={styles.footSmall}>Supabase free: 50k MAU, OTP via email, secure session.</Text>
+        <Text style={styles.foot}>Supabase Auth • SecureStore • com.detox.jail • 0 dummy</Text>
       </View>
     </View>
   );
@@ -133,9 +130,8 @@ const styles = StyleSheet.create({
   input: { backgroundColor: "#0A0D18", borderWidth: 1, borderColor: "#1A1F2E", borderRadius: 10, padding: 14, color: "#fff", fontSize: 15, marginTop: 6 },
   primary: { backgroundColor: "#fff", padding: 14, borderRadius: 12, alignItems: "center", marginTop: 12 },
   primaryTxt: { color: "#06080F", fontWeight: "900", fontSize: 13 },
-  hint: { fontFamily: "IBMPlexMono_400Regular", fontSize: 10, color: "#5A6378", marginTop: 6, textAlign: "center" },
-  linkBtn: { alignItems: "center", marginTop: 8 },
-  linkTxt: { color: "#60A5FA", fontSize: 12, fontWeight: "600" },
+  row: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
+  link: { color: "#60A5FA", fontSize: 12, fontWeight: "600" },
   orRow: { flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 10 },
   orLine: { flex: 1, height: 1, backgroundColor: "#1A1F2E" },
   orTxt: { color: "#5A6378", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
@@ -145,5 +141,4 @@ const styles = StyleSheet.create({
   guestSub: { color: "#8B93B8", fontSize: 11, marginTop: 2 },
   guestArrow: { color: "#5A6378", fontWeight: "900" },
   foot: { fontFamily: "IBMPlexMono_400Regular", fontSize: 10, color: "#5A6378", textAlign: "center", marginTop: 10 },
-  footSmall: { fontFamily: "IBMPlexMono_400Regular", fontSize: 9, color: "#3A4158", textAlign: "center" },
 });
