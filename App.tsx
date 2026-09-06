@@ -25,6 +25,7 @@ import {
 import * as SplashScreen from "expo-splash-screen";
 import AuthScreen from "./src/auth/AuthScreen";
 import { getUser, guestDaysLeft, signOut, User } from "./src/auth/auth";
+import { load as loadStore, save as saveStore, markToday } from "./src/store/useStore";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -62,23 +63,39 @@ export default function App() {
   const [onboarded, setOnboarded] = useState(false);
   const [tab, setTab] = useState<"today" | "jail" | "vault" | "you">("today");
   const [jailed, setJailed] = useState<AppId | null>(null);
-  const [streak, setStreak] = useState(7);
-  const [timeSaved, setTimeSaved] = useState(342); // minutes
+  const [streak, setStreak] = useState(0);
+  const [timeSaved, setTimeSaved] = useState(0);
   const [usage, setUsage] = useState<Record<AppId, number>>({
-    instagram: 28,
-    youtube: 12,
-    reddit: 20,
-    twitter: 7,
+    instagram: 0,
+    youtube: 0,
+    reddit: 0,
+    twitter: 0,
   });
+  const [heatmap, setHeatmap] = useState<number[]>(Array.from({ length: 90 }, () => 0));
   const [pomodoro, setPomodoro] = useState(25 * 60);
   const [pomRunning, setPomRunning] = useState(false);
-  const [adWatchCount, setAdWatchCount] = useState(2);
+  const [adWatchCount, setAdWatchCount] = useState(0);
   const vaultAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     (async () => {
       const u = await getUser();
       setUser(u);
+      // load real persisted stats (starts at 0, no mock)
+      try {
+        const cfg = await loadStore();
+        if (cfg) {
+          setStreak(cfg.streak);
+          setTimeSaved(cfg.timeSavedMin);
+          const m: Record<AppId, number> = { instagram: 0, youtube: 0, reddit: 0, twitter: 0 };
+          (Object.keys(cfg.apps) as AppId[]).forEach((k) => {
+            if (m[k as AppId] !== undefined) m[k as AppId] = cfg.apps[k].usedMin;
+          });
+          setUsage(m);
+          setAdWatchCount(cfg.adWatchCount || 0);
+          if (cfg.heatmap?.length === 90) setHeatmap(cfg.heatmap);
+        }
+      } catch {}
       setAuthLoading(false);
       if (u) {
         const onboard = await import("@react-native-async-storage/async-storage").then((m) => m.default.getItem("dont_onboarded"));
@@ -104,24 +121,21 @@ export default function App() {
     return () => clearInterval(t);
   }, [pomRunning]);
 
+  // persist real stats — no mock random increments
   useEffect(() => {
-    // mock: every 6s, usage ticks, trigger jail when over limit
-    const t = setInterval(() => {
-      setUsage((u) => {
-        const next = { ...u };
-        (Object.keys(next) as AppId[]).forEach((k) => {
-          if (Math.random() < 0.35) next[k] = Math.min(APPS[k].limit + 5, next[k] + 1);
-        });
-        const over = (Object.keys(next) as AppId[]).find((k) => next[k] >= APPS[k].limit);
-        if (over && !jailed) {
-          setJailed(over);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        }
-        return next;
-      });
-    }, 4500);
-    return () => clearInterval(t);
-  }, [jailed]);
+    if (authLoading) return;
+    const cfg = {
+      apps: Object.fromEntries(
+        (Object.keys(APPS) as AppId[]).map((k) => [k, { limitMin: APPS[k].limit, usedMin: usage[k] || 0, jailed: jailed === k }])
+      ) as any,
+      streak,
+      timeSavedMin: timeSaved,
+      level: Math.floor(streak / 3) + 1,
+      adWatchCount,
+      heatmap,
+    };
+    saveStore(cfg as any);
+  }, [usage, streak, timeSaved, adWatchCount, heatmap, jailed, authLoading]);
 
   if (!fontsLoaded || authLoading) return <View style={{ flex: 1, backgroundColor: "#06080F" }} />;
 
@@ -152,7 +166,7 @@ export default function App() {
             <View>
               <Text style={styles.logo}>DON'T</Text>
               <Text style={styles.sub}>
-                {user?.isGuest ? `Guest • ${guestDaysLeft(user)}d left` : user?.email} • Level 12 Warden
+                {user?.isGuest ? `Guest • ${guestDaysLeft(user)}d left` : user?.email} • Level {Math.floor(streak / 3) + 1} Warden
               </Text>
             </View>
             <View style={styles.headerRight}>
@@ -208,7 +222,18 @@ export default function App() {
                 streak={streak}
                 timeSaved={timeSaved}
                 adWatchCount={adWatchCount}
+                heatmap={heatmap}
                 user={user}
+                onClear={async () => {
+                  const { clear } = await import("./src/store/useStore");
+                  await clear();
+                  setStreak(0);
+                  setTimeSaved(0);
+                  setUsage({ instagram: 0, youtube: 0, reddit: 0, twitter: 0 });
+                  setAdWatchCount(0);
+                  setHeatmap(Array.from({ length: 90 }, () => 0));
+                  setJailed(null);
+                }}
                 onSignOut={async () => {
                   await signOut();
                   setUser(null);
@@ -257,6 +282,8 @@ export default function App() {
             if (via === "ad") setAdWatchCount(c => c + 1);
             setUsage(u => ({ ...u, [jailed!]: 0 }));
             setTimeSaved(s => s + 18);
+            setStreak(s => s + 1);
+            setHeatmap(h => markToday(h));
             setJailed(null);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }} />}
@@ -335,15 +362,15 @@ function HomeTab({ usage, jailed, setJailed, setTab, timeSaved }: any) {
           <View>
             <Text style={styles.mono}>TODAY • {new Date().toLocaleDateString()}</Text>
             <Text style={styles.heroTitle}>{Math.floor(timeSaved / 60)}h {timeSaved % 60}m saved</Text>
-            <Text style={styles.heroSub}>+18m vs yesterday • 12 jail breaks avoided</Text>
+            <Text style={styles.heroSub}>{timeSaved === 0 ? "No time saved yet • Jail an app to start" : `+18m vs start • ${Math.floor(timeSaved / 18)} jails avoided`}</Text>
           </View>
           <View style={styles.heroRing}>
-            <Text style={styles.heroRingTxt}>84%</Text>
+            <Text style={styles.heroRingTxt}>{timeSaved === 0 ? "0%" : `${Math.min(100, Math.round((timeSaved / 120) * 100))}%`}</Text>
             <Text style={styles.monoSmall}>FOCUS</Text>
           </View>
         </View>
         <View style={styles.heroBarTrack}>
-          <View style={[styles.heroBarFill, { width: "84%" }]} />
+          <View style={[styles.heroBarFill, { width: timeSaved === 0 ? "0%" : `${Math.min(100, Math.round((timeSaved / 120) * 100))}%` }]} />
         </View>
       </LinearGradient>
 
@@ -506,9 +533,9 @@ function VaultTab({ pomodoro, setPomodoro, pomRunning, setPomRunning }: any) {
   );
 }
 
-function YouTab({ streak, timeSaved, adWatchCount, user, onSignOut }: any) {
-  // 90-day heatmap mock
-  const days = Array.from({ length: 90 }, (_, i) => (Math.random() > 0.3 ? 1 : 0));
+function YouTab({ streak, timeSaved, adWatchCount, heatmap, user, onSignOut, onClear }: any) {
+  const days: number[] = heatmap || Array.from({ length: 90 }, () => 0);
+  const level = Math.floor(streak / 3) + 1;
   return (
     <View style={{ padding: 16, gap: 16 }}>
       <View style={styles.profileCard}>
@@ -517,12 +544,12 @@ function YouTab({ streak, timeSaved, adWatchCount, user, onSignOut }: any) {
             <Text style={styles.avatarTxt}>{user?.email?.[0]?.toUpperCase() || "LD"}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.profileName}>Warden Level 12</Text>
-            <Text style={styles.monoSmall}>🔥 {streak} day streak • {Math.floor(timeSaved / 60)}h saved • Top 8%</Text>
+            <Text style={styles.profileName}>Warden Level {level}</Text>
+            <Text style={styles.monoSmall}>🔥 {streak} day streak • {Math.floor(timeSaved / 60)}h saved • {streak > 0 ? "Top " + Math.max(1, 20 - streak) + "%" : "Start today"}</Text>
             <Text style={styles.monoSmall}>{user?.isGuest ? `Guest • ${guestDaysLeft(user)}d left` : user?.email}</Text>
           </View>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelBadgeTxt}>LVL 12</Text>
+            <Text style={styles.levelBadgeTxt}>LVL {level}</Text>
           </View>
         </LinearGradient>
       </View>
@@ -576,7 +603,12 @@ function YouTab({ streak, timeSaved, adWatchCount, user, onSignOut }: any) {
         </View>
       </View>
 
-      <Text style={styles.monoSmallCenter}>Offline: all stats local • Online: ads & IAP only • $0 server</Text>
+      <TouchableOpacity onPress={onClear} style={{ backgroundColor: "#1A0F0F", borderWidth: 1, borderColor: "#7F1D1D", borderRadius: 12, padding: 12, alignItems: "center" }}>
+        <Text style={{ color: "#FECACA", fontWeight: "800", fontSize: 12 }}>Clear All Data — Reset to 0</Text>
+        <Text style={{ color: "#8B93B8", fontSize: 10, marginTop: 2 }}>Removes streak, time saved, heatmap • Cannot undo</Text>
+      </TouchableOpacity>
+
+      <Text style={styles.monoSmallCenter}>Real data only • Streak starts at 0 • Each jail unlock saves 18m & marks today • Offline persisted via AsyncStorage</Text>
     </View>
   );
 }

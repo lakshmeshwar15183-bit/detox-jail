@@ -8,26 +8,48 @@ export type JailConfig = {
   streak: number;
   timeSavedMin: number;
   level: number;
+  adWatchCount: number;
+  heatmap: number[]; // 90 days, 0=free 1=jailed
 };
 
 const KEY = "dont_jail_v1";
 
+export const defaultConfig = (limits: Record<string, number>): JailConfig => ({
+  apps: Object.fromEntries(Object.entries(limits).map(([k, v]) => [k, { limitMin: v, usedMin: 0, jailed: false }])),
+  streak: 0,
+  timeSavedMin: 0,
+  level: 1,
+  adWatchCount: 0,
+  heatmap: Array.from({ length: 90 }, () => 0),
+});
+
 export async function load(): Promise<JailConfig | null> {
   const raw = await AsyncStorage.getItem(KEY);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  try {
+    const cfg = JSON.parse(raw) as JailConfig;
+    // migrate old configs missing fields
+    if (!cfg.heatmap || cfg.heatmap.length !== 90) cfg.heatmap = Array.from({ length: 90 }, () => 0);
+    if (cfg.adWatchCount === undefined) cfg.adWatchCount = 0;
+    if (cfg.streak === undefined) cfg.streak = 0;
+    if (cfg.timeSavedMin === undefined) cfg.timeSavedMin = 0;
+    return cfg;
+  } catch {
+    return null;
+  }
 }
 
 export async function save(cfg: JailConfig) {
   await AsyncStorage.setItem(KEY, JSON.stringify(cfg));
 }
 
-// Mock UsageStats for demo (real: native module UsageStatsManager)
-// In production, replace with `react-native-usage-stats` or custom native module
-export function mockTick(cfg: JailConfig): JailConfig {
-  const next = JSON.parse(JSON.stringify(cfg)) as JailConfig;
-  for (const k of Object.keys(next.apps)) {
-    if (Math.random() < 0.3) next.apps[k].usedMin += 1;
-    if (next.apps[k].usedMin >= next.apps[k].limitMin) next.apps[k].jailed = true;
-  }
+export async function clear() {
+  await AsyncStorage.removeItem(KEY);
+}
+
+// Real data helper — mark today as jailed day in heatmap
+export function markToday(heatmap: number[]): number[] {
+  const next = [...heatmap];
+  next[89] = 1;
   return next;
 }
